@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "hypercore": "^6.14.0",
+    "hyperdb": "^3.0.0-2"
+  }
+}
