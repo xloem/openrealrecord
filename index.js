@@ -102,18 +102,44 @@ function Stream (db, id, cb) {
 inherits(Stream, events.EventEmitter)
 
 Stream.prototype.listen = function () {
+  if (this._checkpointwatcher) throw new Error('already listening')
+
   var self = this
 
+  var seqs = null
+
+  self.db.get(self.path + '/checkpoint', initialize)
   self._checkpointwatcher = this.db.watch(this.path + '/checkpoint', onwatchcheckpoint)
 
-  function onwatchcheckpoint () {
-    this.db.get(this.path + '/checkpoint', oncheckpoint)
-  }
+  function initialize (err, checkpoints) {
+    seqs = []
 
-  function oncheckpoint (err, checkpointMessage) {
     if (err) return emit(err)
 
-    self._decodeCheckpoint(checkpointMessage, emit)
+    for (var i = 0; i < checkpoints.length; ++i) {
+      var cp = checkpoints[i]
+      seqs[cp.feed] = cp.seq
+    }
+  }
+
+  function onwatchcheckpoint () {
+    self.db.get(self.path + '/checkpoint', oncheckpoint)
+  }
+
+  function oncheckpoint (err, checkpoints) {
+    if (err) return emit(err)
+    if (checkpoints === []) emit(null, null)
+
+    for (var i = 0; i < checkpoints.length; ++i) {
+      var cp = checkpoints[i]
+      var feed = cp.feed
+      var last = seqs[feed]
+      var cur = cp.seq
+      if (!last || last !== cur) {
+        seqs[feed] = cur
+        self._decodeCheckpoint(cp, emit)
+      }
+    }
   }
 
   function emit (err, checkpoint) {
@@ -124,6 +150,7 @@ Stream.prototype.listen = function () {
 
 Stream.prototype.ignore = function () {
   this._checkpointwatcher.destroy()
+  this._checkpointwatcher = null
 }
 
 Stream.prototype.checkpoints = function (opts) {
