@@ -11,6 +11,8 @@ if (opts.help || process.argv.length === 2) {
   console.log('  --storage path            save database to path')
   console.log('  --key key                 database to use')
   console.log('  --info                    output database info')
+  console.log('  --sync                    connect to a peer and synchronize with them')
+  console.log('  --serve                   stay alive, communicating with peers')
   console.log('')
 }
 
@@ -18,22 +20,59 @@ var storage = opts.storage || require('random-access-memory')
 var key = opts.key && Buffer.from(opts.key, 'base64')
 
 var hs = hyperstream(storage, key)
+hs.ready(ready)
 
-hs.ready(main)
+var sw = null
+
+function ready() {
+
+  if (!opts.storage && !opts.key) {
+    opts.info = true
+    opts.serve = true
+    console.log('Generated an in-memory database.')
+  }
+
+  if (opts.sync || opts.serve) {
+    sw = require('hyperdiscovery')(hs.db)
+  }
+
+  if (opts.info) {
+    console.log('Database: ' + hs.db.key.toString('base64'))
+    console.log('User: ' + hs.db.local.key.toString('base64'))
+
+    if (opts.verbose) {
+      hs.db.on('remote-update', function(feed, id) { console.log('DB: remote-update ' + feed.key.toString('base64') + ' #' + id) })
+      hs.db.on('append', function(feed, id) { console.log('DB: append ' + feed.key.toString('base64') + ' #' + id) })
+    }
+
+    if (sw) {
+      if (opts.verbose) {
+        sw.on('close', function() { console.log('NET: close') })
+        sw.on('peer', function(peer) { console.log('NET: peer ' + peer.id) })
+        sw.on('drop', function(peer) { console.log('NET: drop ' + peer.id) })
+        sw.on('connecting', function(next) { console.log('NET: connecting ' + next.id) })
+        sw.on('connection', function(connection, info) { console.log('NET: connection ' + connection.key.toString('base64') + ' (' + info.type +')') })
+        sw.on('error', function(err) { console.log('NET: error ' + err) })
+        sw.on('listening', function() { console.log('NET: listening') })
+      }
+    }
+  }
+
+  if (opts.sync) {
+    hs.db.once('remote-update', main)
+  } else {
+    main()
+  }
+}
 
 function main() {
   if (opts.info) {
-    if (!opts.storage && !opts.key) {
-      console.log('Please provide --storage and/or --key')
-    } else {
-      console.log('Database: ' + hs.db.key.toString('base64'))
-      if (opts.storage) {
-        console.log('User: ' + hs.db.local.key.toString('base64'))
-      }
-      var streams = hs.getStreams()
-      console.log(streams.length + ' Streams:')
-      for (var i = 0; i < streams.length; ++ i)
-        console.log('  ' + streams[i])
-    }
+    var streams = hs.getStreams()
+    console.log(streams.length + ' Streams:')
+    for (var i = 0; i < streams.length; ++ i)
+      console.log('  ' + streams[i])
+  }
+  if (sw && !opts.serve) {
+    sw.close()
   }
 }
