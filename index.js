@@ -79,7 +79,6 @@ function Stream (db, id, cb) {
   this.id = id
   this.path = 'streams/' + this.id
   this.feed = null
-  this.checkpoint = null
   this._dbfeed = null
 
   if (!this.db.opened) throw new Error('not ready')
@@ -112,11 +111,14 @@ Stream.prototype.listen = function () {
   }
 
   function oncheckpoint (err, checkpointMessage) {
+    if (err) return emit(err)
+
+    self._decodeCheckpoint(checkpointMessage, emit)
+  }
+
+  function emit (err, checkpoint) {
     if (err) return self.emit('error', err)
-
-    self.checkpoint = messages.Checkpoint.decode(checkpointMessage)
-
-    self.emit('checkpoint', self.checkpoint)
+    self.emit('checkpoint', checkpoint)
   }
 }
 
@@ -134,14 +136,7 @@ Stream.prototype.checkpoints = function (opts) {
       if (err) return cb(err)
       if (!val) return cb(null, null)
       if (val.key !== self.path + '/checkpoint') return next.call(it, cb)
-      var checkpoint
-      try {
-        checkpoint = messages.Checkpoint.decode(val.value)
-      } catch (e) {
-        return cb(e)
-      }
-      checkpoint.author = feedToStreamID(self.db.feeds[val.feed])
-      cb(null, checkpoint)
+      self._decodeCheckpoint(val, cb)
     })
   }
   return it
@@ -181,6 +176,61 @@ Stream.prototype.write = function (data, cb) {
   })
 }
 
+Stream.prototype.read = function (start, length, opts, cb) {
+  // TODO: find a checkpoint that covers this data and verify it
+
+  var self = this
+
+  if (!start) start = 0
+  if (!length) length = this.feed.byteLength - start
+  if (!opts) opts = {}
+  opts.valueEncoding = 'binary'
+
+  var startIndex = null
+  var startOffset = null
+  var tailIndex = null
+  var blocks = []
+  var totalBlocks = null
+  var completedBlocks = 0
+
+  this.feed.seek(start, {}, seekStart)
+  this.feed.seek(start + length - 1, {}, seekTail)
+
+  function seekStart (err, index, offset) {
+    if (err) return cb(err)
+    startIndex = index
+    startOffset = offset
+    if (tailIndex != null) seekDone()
+  }
+
+  function seekTail (err, index, offset) {
+    if (err) return cb(err)
+    tailIndex = index
+    if (startIndex != null) seekDone()
+  }
+
+  function seekDone () {
+    totalBlocks = 1 + tailIndex - startIndex
+    for (var i = startIndex; i <= tailIndex; ++i) {
+      getOne(i)
+    }
+  }
+
+  function getOne (index) {
+    self.feed.get(index, opts, function (err, data) {
+      if (err) return cb(err)
+      blocks[index] = data
+      ++completedBlocks
+      if (totalBlocks === completedBlocks) finish()
+    })
+  }
+
+  function finish () {
+    blocks[0] = blocks[0].slice(startOffset)
+    cb(null, Buffer.concat(blocks, length))
+  }
+}
+
 Stream.prototype._writeCheckpoint = function (cb) {
   var self = this
   var checkpoint = {
@@ -197,6 +247,17 @@ Stream.prototype._writeCheckpoint = function (cb) {
 
     self.db.put(self.path + '/checkpoint', messages.Checkpoint.encode(checkpoint), cb)
   })
+}
+
+Stream.prototype._decodeCheckpoint = function (node, cb) {
+  var checkpoint
+  try {
+    checkpoint = messages.Checkpoint.decode(node.value)
+  } catch (e) {
+    return cb(e)
+  }
+  checkpoint.author = feedToStreamID(this.db.feeds[node.feed])
+  cb(null, checkpoint)
 }
 
 function feedToStreamID (feed) {
