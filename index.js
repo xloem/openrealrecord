@@ -34,7 +34,7 @@ HyperStream.prototype._ready = function (cb) {
   this.db.ready(function (err) {
     if (err) return cb(err);
 
-    self.id = self.db.local.discoveryKey.toString('binary')
+    self.id = self.db.local.discoveryKey.toString('base64')
     self._feed = self.db.localContent
 
     cb(null)
@@ -70,7 +70,7 @@ HyperStream.prototype._writeCheckpoint = function(cb) {
 
     checkpoint.rootsHash = hash
 
-    self.db.put(self.id, messages.Checkpoint.encode(checkpoint), done)
+    self.db.put(self.id + "/checkpoint", messages.Checkpoint.encode(checkpoint), done)
   })
 
   function done(err) {
