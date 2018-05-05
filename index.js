@@ -21,65 +21,110 @@ function HyperStream (storage, key, opts) {
   if (!opts.contentFeed) opts.contentFeed = true
 
   this.db = hyperdb(storage, key, opts)
+  this.localStream = null
   this.ready = thunky(this._ready.bind(this))
+
+  this._streamCache = {}
 
   this.ready()
 }
 
 inherits(HyperStream, events.EventEmitter)
 
+HyperStream.prototype.getStreams = function () {
+  var ret = []
+  for (var i = 0; i < this.db.feeds.length; ++i) {
+    ret[i] = feedToStreamID(this.db.feeds[i])
+  }
+  return ret
+}
+
+HyperStream.prototype.getStream = function (id) {
+  var stream = this._streamCache[id]
+  if (!stream) {
+    this._streamCache[id] = new Stream(this.db, id)
+    stream = this._streamCache[id]
+  }
+  return stream
+}
+
+HyperStream.prototype.write = function (data, cb) {
+  if (!this.localStream) return cb(new Error('not ready'))
+  this.localStream._write(data, cb)
+}
+
 HyperStream.prototype._ready = function (cb) {
   var self = this
   this.db.ready(function (err) {
     if (err) return cb(err)
 
-    self.id = self.db.local.discoveryKey.toString('base64')
-    self._feed = self.db.localContent
+    self.id = feedToStreamID(self.db.local)
+    self.localStream = self.getStream(self.id)
 
     cb(null)
   })
 }
 
-HyperStream.prototype.write = function (data, cb) {
+function Stream (db, id) {
+  this.db = db
+  this.id = id
+  this.path = 'streams/' + this.id
+  this.feed = null
+  this._dbfeed = null
+
+  if (!this.db.opened) throw new Error('not ready')
+
+  var feedKey = streamIDToFeedKey(id)
+
+  // // this approach does not use private members of hyperdb but is O(n)
+  // for (var i = 0; i < db.feeds; ++ i) {
+  //   if (0 == Buffer.compare(feedKey, db.feeds[i].key)) {
+  //     this.feed = db.contentFeeds[i]
+  //     this._dbfeed = db.feeds[i]
+  //   }
+  // }
+
+  // this approach uses private members of hyperdb but is just a map lookup
+  var writer = db._byKey.get(feedKey.toString('hex'))
+  this.feed = writer._contentFeed
+  this._dbfeed = writer._feed
+}
+
+Stream.prototype._write = function (data, cb) {
   var self = this
 
-  if (!this.db.opened) cb(new Error('not ready'))
+  this.feed.append(data, function (err) {
+    // nextTick is used because if an error is thrown here, the hypercore batcher will crash
+    if (err) return process.nextTick(cb, err)
 
-  this._feed.append(data, function (err) {
-    // if an error is thrown, the batcher will crash and never write again
-    try {
-      if (err) return cb(err)
-
-      self._writeCheckpoint(cb)
-    } catch (e) {
-      self.emit('error', e)
-    }
+    self._writeCheckpoint(cb)
   })
 }
 
-HyperStream.prototype._writeCheckpoint = function (cb) {
+Stream.prototype._writeCheckpoint = function (cb) {
   var self = this
   var checkpoint = {
-    length: this._feed.length,
-    byteLength: this._feed.byteLength,
+    length: this.feed.length,
+    byteLength: this.feed.byteLength,
     rootHash: null
   }
 
-  hashRoots(this._feed, checkpoint.length - 1, function (err, hash) {
-    if (err) return cb(err)
+  // TODO: hash the db heads in too, in case hyperdb doesn't implement #41
+  hashRoots(this.feed, checkpoint.length - 1, function (err, hash) {
+    if (err) return process.nextTick(cb, err)
 
     checkpoint.rootsHash = hash
 
-    self.db.put(self.id + '/checkpoint', messages.Checkpoint.encode(checkpoint), done)
+    self.db.put('streams/' + self.id + '/checkpoint', messages.Checkpoint.encode(checkpoint), cb)
   })
+}
 
-  function done (err) {
-    try {
-      cb(err)
-    } catch (e) {
-      self.emit('error', e)
-    }
-  }
+function feedToStreamID (feed) {
+  return feed.key.toString('base64')
+}
+
+function streamIDToFeedKey (id) {
+  return Buffer.from(id, 'base64')
 }
 
 function hashRoots (feed, index, cb) {
