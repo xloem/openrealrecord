@@ -1,0 +1,7 @@
+message Checkpoint
+{
+  required uint64 length = 1;
+  required uint64 byteLength = 2;
+  required bytes rootsHash = 3;
+  optional bytes instant = 4;
+}
