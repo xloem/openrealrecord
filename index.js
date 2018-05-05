@@ -3,6 +3,8 @@ var thunky = require('thunky')
 var events = require('events')
 var inherits = require('inherits')
 var sodium = require('sodium-universal')
+// var from = require('from2') // for checkpoint read stream
+var bulk = require('bulk-write-stream')
 var bufferAlloc = require('buffer-alloc-unsafe')
 var messages = require('./lib/messages')
 
@@ -50,7 +52,12 @@ HyperStream.prototype.getStream = function (id) {
 
 HyperStream.prototype.write = function (data, cb) {
   if (!this.localStream) return cb(new Error('not ready'))
-  this.localStream._write(data, cb)
+  this.localStream.write(data, cb)
+}
+
+HyperStream.prototype.createWriteStream = function () {
+  if (!this.localStream) throw new Error('not ready')
+  return this.localStream.createCheckpointedWriteStream()
 }
 
 HyperStream.prototype._ready = function (cb) {
@@ -65,11 +72,14 @@ HyperStream.prototype._ready = function (cb) {
   })
 }
 
-function Stream (db, id) {
+function Stream (db, id, cb) {
+  events.EventEmitter.call(this)
+
   this.db = db
   this.id = id
   this.path = 'streams/' + this.id
   this.feed = null
+  this.checkpoint = null
   this._dbfeed = null
 
   if (!this.db.opened) throw new Error('not ready')
@@ -90,7 +100,77 @@ function Stream (db, id) {
   this._dbfeed = writer._feed
 }
 
-Stream.prototype._write = function (data, cb) {
+inherits(Stream, events.EventEmitter)
+
+Stream.prototype.listen = function () {
+  var self = this
+
+  self._checkpointwatcher = this.db.watch(this.path + '/checkpoint', onwatchcheckpoint)
+
+  function onwatchcheckpoint () {
+    this.db.get(this.path + '/checkpoint', oncheckpoint)
+  }
+
+  function oncheckpoint (err, checkpointMessage) {
+    if (err) return self.emit('error', err)
+
+    self.checkpoint = messages.Checkpoint.decode(checkpointMessage)
+
+    self.emit('checkpoint', self.checkpoint)
+  }
+}
+
+Stream.prototype.ignore = function () {
+  this._checkpointwatcher.destroy()
+}
+
+Stream.prototype.checkpoints = function (opts) {
+  var self = this
+  var it = this.db.history(opts)
+  var _next = it._next
+  it._next = next
+  function next (cb) {
+    _next.call(it, function (err, val) {
+      if (err) return cb(err)
+      if (!val) return cb(null, null)
+      if (val.key !== self.path + '/checkpoint') return next.call(it, cb)
+      var checkpoint
+      try {
+        checkpoint = messages.Checkpoint.decode(val.value)
+      } catch (e) {
+        return cb(e)
+      }
+      checkpoint.author = feedToStreamID(self.db.feeds[val.feed])
+      cb(null, checkpoint)
+    })
+  }
+  return it
+}
+
+Stream.prototype.verify = function (checkpoint, cb) {
+  if (checkpoint.author !== this.id) return cb(new Error('incorrect author'))
+  hashRoots(this.feed, checkpoint.length - 1, function (err, hash, byteLength) {
+    if (err) return cb(err)
+    if (byteLength !== checkpoint.byteLength) return cb(new Error('incorrect byteLength'))
+    if (Buffer.compare(checkpoint.rootsHash, hash)) return cb(new Error('hash failure'))
+    cb(null, true)
+  })
+}
+
+Stream.prototype.createWriteStream = function () {
+  var self = this
+  return bulk.obj(write)
+
+  function write (batch, cb) {
+    self.feed.append(batch, function (err) {
+      // nextTick is used because if an error is thrown here, the hypercore batcher will crash
+      if (err) return process.nextTick(cb, err)
+      self._writeCheckpoint(cb)
+    })
+  }
+}
+
+Stream.prototype.write = function (data, cb) {
   var self = this
 
   this.feed.append(data, function (err) {
@@ -115,7 +195,7 @@ Stream.prototype._writeCheckpoint = function (cb) {
 
     checkpoint.rootsHash = hash
 
-    self.db.put('streams/' + self.id + '/checkpoint', messages.Checkpoint.encode(checkpoint), cb)
+    self.db.put(self.path + '/checkpoint', messages.Checkpoint.encode(checkpoint), cb)
   })
 }
 
@@ -131,12 +211,16 @@ function hashRoots (feed, index, cb) {
   feed.rootHashes(index, function (err, roots) {
     if (err) return cb(err)
 
+    var totalbytes = 0
     var digest = bufferAlloc(32)
 
-    for (var i = 0; i < roots.length; i++) { roots[i] = roots[i].hash }
+    for (var i = 0; i < roots.length; i++) {
+      totalbytes += roots[i].size
+      roots[i] = roots[i].hash
+    }
 
     sodium.crypto_generichash_batch(digest, roots)
 
-    cb(null, digest)
+    cb(null, digest, totalbytes)
   })
 }
