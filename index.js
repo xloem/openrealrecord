@@ -43,6 +43,8 @@ HyperStream.prototype._ready = function (cb) {
 HyperStream.prototype.write = function (data, cb) {
   var self = this
 
+  if (!this.db.opened) cb(new Error('not ready'))
+
   this._feed.append(data, function (err) {
     // if an error is thrown, the batcher will crash and never write again
     try {

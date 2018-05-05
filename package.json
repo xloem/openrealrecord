@@ -8,10 +8,12 @@
   },
   "devDependencies": {
     "protocol-buffers": "^4.0.4",
-    "standard": "^11.0.0."
+    "random-access-memory": "^3.0.0",
+    "standard": "^11.0.0.",
+    "tape": "^4.9.0"
   },
   "scripts": {
-    "test": "standard",
+    "test": "standard && tape test/*.js",
     "protobuf": "protocol-buffers schema.proto -o lib/messages.js"
   },
   "license": "MIT"
