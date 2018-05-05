@@ -1,4 +1,6 @@
 var hyperdb = require('hyperdb')
+var hyperdbput = require('hyperdb/lib/put')
+var hyperdbmessages = require('hyperdb/lib/messages')
 var thunky = require('thunky')
 var events = require('events')
 var inherits = require('inherits')
@@ -85,18 +87,9 @@ function Stream (db, id, cb) {
 
   var feedKey = streamIDToFeedKey(id)
 
-  // // this approach does not use private members of hyperdb but is O(n)
-  // for (var i = 0; i < db.feeds; ++ i) {
-  //   if (0 == Buffer.compare(feedKey, db.feeds[i].key)) {
-  //     this.feed = db.contentFeeds[i]
-  //     this._dbfeed = db.feeds[i]
-  //   }
-  // }
-
-  // this approach uses private members of hyperdb but is just a map lookup
-  var writer = db._byKey.get(feedKey.toString('hex'))
-  this.feed = writer._contentFeed
-  this._dbfeed = writer._feed
+  var feeds = keyToFeeds(this.db, feedKey)
+  this._dbfeed = feeds[0]
+  this.feed = feeds[1]
 }
 
 inherits(Stream, events.EventEmitter)
@@ -171,9 +164,14 @@ Stream.prototype.checkpoints = function (opts) {
 
 Stream.prototype.verify = function (checkpoint, cb) {
   if (checkpoint.author !== this.id) return cb(new Error('incorrect author'))
-  hashRoots(this.feed, checkpoint.length - 1, function (err, hash, byteLength) {
+  if (Buffer.compare(checkpoint._feeds[0], this.feed.key)) return cb(new Error('incorrect feed'))
+  var feeds = [this.feed]
+  for (var i = 1; i < checkpoint._feeds.length; ++i) {
+    feeds[i] = keyToFeeds(this.db, checkpoint._feeds[i])[0]
+  }
+  hashRoots(feeds, checkpoint._lengths, function (err, hash, byteLengths) {
     if (err) return cb(err)
-    if (byteLength !== checkpoint.byteLength) return cb(new Error('incorrect byteLength'))
+    if (byteLengths[0] !== checkpoint.byteLength) return cb(new Error('incorrect byteLength'))
     if (Buffer.compare(checkpoint.rootsHash, hash)) return cb(new Error('hash failure'))
     cb(null, true)
   })
@@ -260,19 +258,33 @@ Stream.prototype.read = function (start, length, opts, cb) {
 
 Stream.prototype._writeCheckpoint = function (cb) {
   var self = this
-  var checkpoint = {
-    length: this.feed.length,
-    byteLength: this.feed.byteLength,
-    rootHash: null
-  }
 
-  // TODO: hash the db heads in too, in case hyperdb doesn't implement #41
-  hashRoots(this.feed, checkpoint.length - 1, function (err, hash) {
-    if (err) return process.nextTick(cb, err)
+  // wrapping code taken from HyperDB.prototype.put to ensure our sequence numbers are the same as in the put
+  // this is needed because put only lets us know what vector clock it used after it has already submitted the data
+  // TODO: submit an issue/pr to hyperdb mentioning this use case and brainstorm a solution to propose
+  this.db._lock(function (release) {
+    var clock = self.db._clock()
+    self.db.heads(function (err, heads) {
+      if (err) return unlock(err)
 
-    checkpoint.rootsHash = hash
+      var checkpoint = {
+        length: self.feed.length,
+        byteLength: self.feed.byteLength,
+        rootsHash: null
+      }
 
-    self.db.put(self.path + '/checkpoint', messages.Checkpoint.encode(checkpoint), cb)
+      hashRoots([self.feed].concat(self.db.feeds), [checkpoint.length].concat(clock), function (err, contentHash) {
+        if (err) return process.nextTick(cb, err)
+
+        checkpoint.rootsHash = contentHash
+
+        hyperdbput(self.db, clock, heads, self.path + '/checkpoint', messages.Checkpoint.encode(checkpoint), unlock)
+      })
+    })
+
+    function unlock (err) {
+      release(cb, err)
+    }
   })
 }
 
@@ -284,7 +296,37 @@ Stream.prototype._decodeCheckpoint = function (node, cb) {
     return cb(e)
   }
   checkpoint.author = feedToStreamID(this.db.feeds[node.feed])
-  cb(null, checkpoint)
+  checkpoint._lengths = [checkpoint.length].concat(node.clock)
+  --checkpoint._lengths[node.feed + 1]
+  // TODO: submit an issue / PR to hyperdb to allow for retrieving feeds at an arbitrary point in history
+  //       which is needed to interpret historic vector clocks.
+  //       For now we use InflatedEntry to decode them by hand.
+  this.db.feeds[node.feed].get(node.inflate, function (err, inflatebuf) {
+    if (err) return cb(err)
+
+    var inflate = hyperdbmessages.InflatedEntry.decode(inflatebuf)
+    checkpoint._feeds = [inflate.contentFeed]
+    for (var i = 0; i < inflate.feeds.length; ++i) {
+      checkpoint._feeds[i + 1] = inflate.feeds[i].key
+    }
+
+    cb(null, checkpoint)
+  })
+}
+
+function keyToFeeds (db, key) {
+  // TODO: submit an issue / PR to hyperdb to allow for public access feeds by key
+
+  // // this approach does not use private members of hyperdb but is O(n)
+  // for (var i = 0; i < db.feeds; ++ i) {
+  //   if (0 == Buffer.compare(key, db.feeds[i].key)) {
+  //     return [db.feeds[i], db.contentFeeds[i]]
+  //   }
+  // }
+
+  // this approach uses private members of hyperdb but is just a map lookup
+  var writer = db._byKey.get(key.toString('hex'))
+  return [writer._feed, writer._contentFeed]
 }
 
 function feedToStreamID (feed) {
@@ -295,20 +337,38 @@ function streamIDToFeedKey (id) {
   return Buffer.from(id, 'base64')
 }
 
-function hashRoots (feed, index, cb) {
-  feed.rootHashes(index, function (err, roots) {
+function hashRoots (feeds, lengths, cb) {
+  var digest = bufferAlloc(32)
+  var hasher = sodium.crypto_generichash_instance(digest.length)
+
+  var totals = []
+  var index = 0
+
+  thisFeed()
+
+  function thisFeed () {
+    if (!lengths[index]) return nextFeed(null, [])
+    feeds[index].rootHashes(lengths[index] - 1, nextFeed)
+  }
+
+  function nextFeed (err, roots) {
     if (err) return cb(err)
 
     var totalbytes = 0
-    var digest = bufferAlloc(32)
 
     for (var i = 0; i < roots.length; i++) {
       totalbytes += roots[i].size
-      roots[i] = roots[i].hash
+      hasher.update(roots[i].hash)
     }
 
-    sodium.crypto_generichash_batch(digest, roots)
+    totals[index] = totalbytes
 
-    cb(null, digest, totalbytes)
-  })
+    ++index
+    if (index < feeds.length) {
+      thisFeed()
+    } else {
+      hasher.final(digest)
+      cb(null, digest, totals)
+    }
+  }
 }
