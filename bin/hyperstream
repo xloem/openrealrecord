@@ -1,0 +1,39 @@
+#!/usr/bin/env node
+
+var hyperstream = require('..')
+var minimist = require('minimist')
+
+var opts = minimist(process.argv.slice(2))
+
+if (opts.help || process.argv.length === 2) {
+  console.log('\nDecentralized secure binary streaming, powered by hyperdb\n')
+  
+  console.log('  --storage path            save database to path')
+  console.log('  --key key                 database to use')
+  console.log('  --info                    output database info')
+  console.log('')
+}
+
+var storage = opts.storage || require('random-access-memory')
+var key = opts.key && Buffer.from(opts.key, 'base64')
+
+var hs = hyperstream(storage, key)
+
+hs.ready(main)
+
+function main() {
+  if (opts.info) {
+    if (!opts.storage && !opts.key) {
+      console.log('Please provide --storage and/or --key')
+    } else {
+      console.log('Database: ' + hs.db.key.toString('base64'))
+      if (opts.storage) {
+        console.log('User: ' + hs.db.local.key.toString('base64'))
+      }
+      var streams = hs.getStreams()
+      console.log(streams.length + ' Streams:')
+      for (var i = 0; i < streams.length; ++ i)
+        console.log('  ' + streams[i])
+    }
+  }
+}
