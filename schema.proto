@@ -1,7 +1,31 @@
 message Checkpoint
 {
-  required uint64 length = 1;
-  required uint64 byteLength = 2;
-  required bytes rootsHash = 3;
-  optional bytes instant = 4;
+  required bytes rootsHash = 0;
+  required uint64 timestamp = 1;
+  required uint64 length = 2;
+  required uint64 byteLength = 3;
+}
+
+message Timestamp
+{
+  repeated bytes id = 0;
+}
+
+message Database
+{
+  repeated uint64 metaclock = 0;
+  repeated uint64 contentclock = 1;
+  required bytes rootsHash = 2;
+  required uint64 inflate = 3;
+}
+
+message InflatedDatabase
+{
+  repeated uint64 metaclock = 0;
+  repeated uint64 contentclock = 1;
+  required bytes rootsHash = 2;
+  required uint64 inflate = 3;
+
+  repeated Feed metafeeds = 4;
+  repeated Feed contentfeeds = 5;
 }
