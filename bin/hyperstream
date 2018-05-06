@@ -10,10 +10,12 @@ if (opts.help || process.argv.length === 2) {
   console.log('\nDecentralized secure binary streaming, powered by hyperdb\n')
   
   console.log('  --storage path            save database to path')
-  console.log('  --key key                 database to use')
-  console.log('  --info                    output database info')
-  console.log('  --sync                    connect to a peer and synchronize with them')
-  console.log('  --serve                   stay alive, communicating with peers')
+  console.log('  --db key                  database to use')
+  console.log('  --quiet                   do not output anything')
+  console.log('  --info                    output database info (default when not piping out)')
+  console.log('  --sync                    sync with a network peer before doing anything else')
+  console.log('  --serve                   connect to the network and communicate until terminated')
+  console.log('  --authorize [key]         publicize a user\'s stream')
   console.log('  --pipe [key]              publicize from stdin and/or write key to stdout')
   console.log('  --start offset            rewind stream to offset before output')
   console.log('')
@@ -22,7 +24,7 @@ if (opts.help || process.argv.length === 2) {
 }
 
 var storage = opts.storage || require('random-access-memory')
-var key = opts.key && Buffer.from(opts.key, 'base64')
+var key = opts.db && Buffer.from(opts.db, 'base64')
 
 var hs = hyperstream(storage, key)
 hs.ready(ready)
@@ -32,9 +34,14 @@ var outstream = null
 
 function ready() {
 
-  if (!opts.storage && !opts.key) {
-    opts.info = true
+  if (!opts.pipe || opts.pipe === true) {
+    if (!opts.quiet)
+      opts.info = true
+  }
+  if (!opts.storage && !opts.db) {
     opts.serve = true
+  }
+  if (opts.info && !opts.storage) {
     console.log('Generated an in-memory database.')
   }
 
@@ -65,13 +72,19 @@ function ready() {
   }
 
   if (opts.sync) {
-    hs.db.once('remote-update', main)
+    hs.db.once('remote-update', function() { main() })
   } else {
     main()
   }
 }
 
-function main() {
+function main(err) {
+  if (err) console.error(err)
+  if (opts.authorize) {
+    var authorizee = opts.authorize
+    opts.authorize = null
+    return hs.db.authorize(Buffer.from(authorizee, 'base64'), main)
+  }
   if (opts.info) {
     var streams = hs.getStreams()
     console.log(streams.length + ' Streams:')
@@ -91,7 +104,8 @@ function main() {
 }
 
 function pipeout (key, cb) {
-  outstream = hs.getStream(key, function () {
+  outstream = hs.getStream(key, function (err) {
+    if (err) return finish(err)
     var checkpoints = outstream.checkpoints({'reverse': true})
     var end = 0
     var nextend = null

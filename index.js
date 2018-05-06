@@ -300,7 +300,8 @@ Stream.prototype._writeCheckpoint = function (cb) {
       var clock = self.db._clock()
 
       // taken from Writer.prototype.append which is called after the put node is constructed and adjusts local clock
-      if (!clock[0]) clock[0] = self._dbfeed.length
+      var hdbid = self.db._byKey.get(self._dbfeed.key.toString('hex'))._id
+      if (!clock[hdbid]) clock[hdbid] = self._dbfeed.length
 
       var checkpoint = {
         length: self.feed.length,
@@ -361,7 +362,9 @@ function keyToFeeds (db, key, cb) {
 
   // this approach uses private members of hyperdb but is just a map lookup if already available locally
   var writer = db._byKey.get(key.toString('hex'))
-  if (!writer._contentFeed) {
+  if (!writer) {
+    cb(new Error('no feed found for key ' + key.toString('base64')))
+  } else if (!writer._contentFeed) {
     writer._feed.once('append', function () {
       writer.head(function (err) {
         if (err) return cb(err)
