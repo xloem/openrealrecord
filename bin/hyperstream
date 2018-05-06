@@ -2,13 +2,13 @@
 
 var hyperstream = require('..')
 var minimist = require('minimist')
-var low = require('last-one-wins') 
+var low = require('last-one-wins')
 
 var opts = minimist(process.argv.slice(2))
 
 if (opts.help || process.argv.length === 2) {
   console.log('\nDecentralized secure binary streaming, powered by hyperdb\n')
-  
+
   console.log('  --storage path            save database to path')
   console.log('  --db key                  database to use')
   console.log('  --quiet                   do not output anything')
@@ -16,8 +16,10 @@ if (opts.help || process.argv.length === 2) {
   console.log('  --sync                    sync with a network peer before doing anything else')
   console.log('  --serve                   connect to the network and communicate until terminated')
   console.log('  --authorize [key]         publicize a user\'s stream')
-  console.log('  --pipe [key]              publicize from stdin and/or write key to stdout')
+  console.log('  --pipe [key]              publicize from stdin and/or write stream to stdout')
   console.log('  --start offset            rewind stream to offset before output')
+  console.log('  --myname name             set stream name')
+  console.log('  --myowner key             set stream owner')
   console.log('')
 
   process.exit(0)
@@ -72,61 +74,153 @@ function ready() {
   }
 
   if (opts.sync) {
-    hs.db.once('remote-update', function() { main() })
+    hs.db.once('remote-update', setmetadata)
   } else {
-    main()
+    setmetadata()
   }
 }
 
-function main(err) {
-  if (err) console.error(err)
-  if (opts.authorize) {
-    var authorizee = opts.authorize
-    opts.authorize = null
-    return hs.db.authorize(Buffer.from(authorizee, 'base64'), main)
+function setmetadata () {
+  if (!opts.myname && !opts.myowner) return streamsOut()
+
+  var metadata = hs.localStream.metadata
+  if (opts.myname) metadata.name = opts.myname
+  if (opts.myowner) metadata.owner = opts.myowner
+
+  hs.localStream.setMetadata(metadata, function (err, metadata) {
+    if (err) console.error(err)
+    streamsOut ()
+  })
+}
+
+function streamsOut () {
+  if (!opts.info) return main()
+
+  var streams = hs.getStreams()
+  console.log(streams.length + ' Streams:')
+
+  var idx = 0
+  var checkpoints = null
+  var stream
+  var streamErr
+  var streamName
+  var streamLen
+  var startingBadCheckpoints
+  var numValidatedStart
+  var endingBadCheckpoints
+  var numValidatedEnd
+
+  streamOut()
+ 
+  function streamOut() {
+    hs.getStream(streams[idx], gotStream)
   }
-  if (opts.info) {
-    var streams = hs.getStreams()
-    console.log(streams.length + ' Streams:')
-    for (var i = 0; i < streams.length; ++ i)
-      console.log('  ' + streams[i])
+
+  function gotStream (err, s) {
+    stream = s
+    if (err) {
+      streamErr = err
+      streamName = streams[idx]
+      streamLen = 0
+      return summarize()
+    }
+    streamErr = null
+    streamName = stream.metadata.name
+    streamLen = stream.feed.byteLength
+    stream.validateMetadata(stream.metadata, validatedMetadata)
   }
-  if (opts.pipe) {
-    process.stdin.pipe(hs.createWriteStream())
-    process.stdin.on('end', finish)
-    if (opts.pipe !== true) {
-      pipeout(opts.pipe, finish)
+
+  function validatedMetadata (err) {
+    if (err) streamErr = err
+
+    startingBadCheckpoints = 0
+    numValidatedStart = 0
+    endingBadCheckpoints = 0
+    numValidatedEnd = 0
+
+    stream.findValidCheckpoint(null, firstGoodCheckpoint, startingBadCheckpoint)
+
+    function startingBadCheckpoint () { ++startingBadCheckpoints }
+    function firstGoodCheckpoint (err, checkpoint) {
+      if (err) {
+        streamErr = err
+      }
+      if (!checkpoint) {
+        summarize()
+      } else {
+        numValidatedStart = checkpoint.byteLength
+        stream.findValidCheckpoint({'reverse': false}, lastGoodCheckpoint, endingBadCheckpoint)
+      }
+    }
+    function endingBadCheckpoint () { ++endingBadCheckpoints }
+    function lastGoodCheckpoint (err, checkpoint) {
+      if (err) streamErr = err
+      else if (checkpoint) numValidatedEnd = checkpoint.byteLength
+      summarize()
     }
   }
-  if (sw && !opts.serve && !opts.pipe) {
-    finish()
+
+  function summarize() {
+    var str = '  '
+    str += streamName
+    if (!streamErr) str += ' (' + streams[idx] + ')'
+    else str += ' ERROR ' + streamErr.message
+    if (startingBadCheckpoints) str += ' WARN corrupt head'
+    if (endingBadCheckpoints) str += ' WARN corrupt tail'
+    str += ' ' + numValidatedEnd + 'B'
+    if (streamLen > numValidatedEnd) {
+      var remaining = streamLen - numValidatedEnd
+      str += ' (+' + remaining + 'B unverified)'
+    }
+    console.log(str)
+    nextloop()
+  }
+
+  function nextloop() {
+    ++idx
+    if (idx < streams.length) return streamOut()
+    else return main()
+  }
+}
+
+function main (err) {
+  if (err) console.error(err)
+  try {
+    if (opts.authorize) {
+      var authorizee = opts.authorize
+      opts.authorize = null
+      return hs.db.authorize(Buffer.from(authorizee, 'base64'), main)
+    }
+    if (opts.pipe) {
+      var writeStream = hs.createWriteStream()
+      writeStream.on('error', console.error)
+      process.stdin.pipe(writeStream)
+      process.stdin.on('end', finish)
+      if (opts.pipe !== true) {
+        pipeout(opts.pipe, finish)
+      }
+    }
+    if (sw && !opts.serve && !opts.pipe) {
+      finish()
+    }
+  } catch(e) {
+    finish(e)
   }
 }
 
 function pipeout (key, cb) {
   outstream = hs.getStream(key, function (err) {
     if (err) return finish(err)
-    var checkpoints = outstream.checkpoints({'reverse': true})
     var end = 0
     var nextend = null
     var start = 0
     var keepStreaming = false
-    checkpoints.next(seekValid)
-  
-    function seekValid (err, checkpoint) {
-      if (err) return cb(err)
-      if (checkpoint === null) return startStreaming()
-      outstream.verify(checkpoint, function(err) {
-        if (err) {
-          console.error(err)
-          return checkpoints.next(seekValid)
-        } else {
-          end = checkpoint.byteLength
-          startStreaming()
-        }
-      })
-    }
-  
+
+    outstream.findValidCheckpoint({'reverse': true}, function (err, checkpoint) {
+      if (checkpoint) end = checkpoint.byteLength
+      startStreaming()
+    }, console.error)
+
     var writeout = low(function(length, cb2) {
       outstream.read(start, length, {}, function (err, data) {
         if (err) return cb(err)
@@ -150,7 +244,7 @@ function pipeout (key, cb) {
       }
       if (end != start) writeout(end - start)
     }
-  
+
     outstream.listen()
     outstream.on('checkpoint', function (checkpoint) {
       if (checkpoint.byteLength <= end) return console.error('checkpoint fails to advance')
