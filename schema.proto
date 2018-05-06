@@ -26,6 +26,6 @@ message InflatedDatabase
   required bytes rootsHash = 2;
   required uint64 inflate = 3;
 
-  repeated Feed metafeeds = 4;
-  repeated Feed contentfeeds = 5;
+  repeated bytes metafeeds = 4;
+  repeated bytes contentfeeds = 5;
 }

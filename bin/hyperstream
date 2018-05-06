@@ -149,7 +149,7 @@ function streamsOut () {
         summarize()
       } else {
         numValidatedStart = checkpoint.byteLength
-        stream.findValidCheckpoint({'reverse': false}, lastGoodCheckpoint, endingBadCheckpoint)
+        stream.findValidCheckpoint({'reverse': true}, lastGoodCheckpoint, endingBadCheckpoint)
       }
     }
     function endingBadCheckpoint () { ++endingBadCheckpoints }
@@ -164,9 +164,9 @@ function streamsOut () {
     var str = '  '
     str += streamName
     if (!streamErr) str += ' (' + streams[idx] + ')'
-    else str += ' ERROR ' + streamErr.message
-    if (startingBadCheckpoints) str += ' WARN corrupt head'
-    if (endingBadCheckpoints) str += ' WARN corrupt tail'
+    else str += ' { ERR ' + streamErr.message + ' }'
+    if (startingBadCheckpoints) str += ' { WARN genesis -> ' + startingBadCheckpoints + ' bad }'
+    if (endingBadCheckpoints) str += ' { WARN ' + endingBadCheckpoints + ' <- now }'
     str += ' ' + numValidatedEnd + 'B'
     if (streamLen > numValidatedEnd) {
       var remaining = streamLen - numValidatedEnd
@@ -246,6 +246,9 @@ function pipeout (key, cb) {
     }
 
     outstream.listen()
+    outstream.on('error', function (err) {
+      console.error(err)
+    })
     outstream.on('checkpoint', function (checkpoint) {
       if (checkpoint.byteLength <= end) return console.error('checkpoint fails to advance')
       outstream.verify(checkpoint, function(err) {
