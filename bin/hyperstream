@@ -3,6 +3,7 @@
 var hyperstream = require('..')
 var minimist = require('minimist')
 var low = require('last-one-wins')
+var util = require('../lib/util')
 
 var opts = minimist(process.argv.slice(2))
 
@@ -52,8 +53,8 @@ function ready() {
   }
 
   if (opts.info) {
-    console.log('Database: ' + hs.db.key.toString('base64'))
-    console.log('User: ' + hs.db.local.key.toString('base64'))
+    console.log('Database: ' + util.keyToID(hs.db.key))
+    console.log('User: ' + util.keyToID(hs.db.local.key))
 
     if (opts.verbose) {
       hs.db.on('remote-update', function(feed, id) { console.log('DB: remote-update ' + feed.key.toString('base64') + ' #' + id) })
@@ -100,7 +101,6 @@ function streamsOut () {
   console.log(streams.length + ' Streams:')
 
   var idx = 0
-  var checkpoints = null
   var stream
   var streamErr
   var streamName
