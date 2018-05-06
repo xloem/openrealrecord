@@ -14,7 +14,7 @@
   },
   "devDependencies": {
     "protocol-buffers": "^4.0.4",
-    "standard": "^11.0.0.",
+    "standard": "^11.0.0",
     "tape": "^4.9.0"
   },
   "scripts": {
