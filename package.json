@@ -2,9 +2,13 @@
   "name": "hyperstream",
   "version": "0.0.1",
   "description": "Decentralized secure binary streaming powered by hyperdb",
-  "main": "index.js",
+  "main": "./lib/index.js",
   "bin": "./bin/hyperstream",
+  "engines": {
+    "node": ">=7.6.0"
+  },
   "dependencies": {
+    "bclient": "0.0.2",
     "hypercore": "^6.14.0",
     "hyperdb": "git+https://github.com/mafintosh/hyperdb#330cf0456074a21533711fdf3186c26e423a79db",
     "hyperdiscovery": "^7.1.0",
@@ -21,13 +25,8 @@
     "test": "standard && tape test/*.js",
     "protobuf": "protocol-buffers schema.proto -o lib/messages.js"
   },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/xloem/hyperstream.git"
-  },
-  "author": {
-    "name": "Karl Semich",
-    "email": "0xloem@gmail.com"
-  },
+  "repository": "https://github.com/xloem/hyperstream.git",
+  "homepage": "https://github.com/xloem/hyperstream.git",
+  "author": "Karl Semich <0xloem@gmail.com>",
   "license": "MIT"
 }
