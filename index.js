@@ -289,9 +289,13 @@ Stream.prototype._writeCheckpoint = function (cb) {
   // this is needed because put only lets us know what vector clock it used after it has already submitted the data
   // TODO: submit an issue/pr to hyperdb mentioning this use case and brainstorm a solution to propose
   this.db._lock(function (release) {
-    var clock = self.db._clock()
     self.db.heads(function (err, heads) {
       if (err) return unlock(err)
+
+      var clock = self.db._clock()
+
+      // taken from Writer.prototype.append which is called after the put node is constructed and adjusts local clock
+      if (!clock[0]) clock[0] = self._dbfeed.length
 
       var checkpoint = {
         length: self.feed.length,
