@@ -43,10 +43,10 @@ HyperStream.prototype.getStreams = function () {
   return ret
 }
 
-HyperStream.prototype.getStream = function (id) {
+HyperStream.prototype.getStream = function (id, cb) {
   var stream = this._streamCache[id]
   if (!stream) {
-    this._streamCache[id] = new Stream(this.db, id)
+    this._streamCache[id] = new Stream(this.db, id, cb)
     stream = this._streamCache[id]
   }
   return stream
@@ -59,7 +59,7 @@ HyperStream.prototype.write = function (data, cb) {
 
 HyperStream.prototype.createWriteStream = function () {
   if (!this.localStream) throw new Error('not ready')
-  return this.localStream.createCheckpointedWriteStream()
+  return this.localStream.createWriteStream()
 }
 
 HyperStream.prototype._ready = function (cb) {
@@ -68,9 +68,7 @@ HyperStream.prototype._ready = function (cb) {
     if (err) return cb(err)
 
     self.id = feedToStreamID(self.db.local)
-    self.localStream = self.getStream(self.id)
-
-    cb(null)
+    self.localStream = self.getStream(self.id, cb)
   })
 }
 
@@ -87,9 +85,13 @@ function Stream (db, id, cb) {
 
   var feedKey = streamIDToFeedKey(id)
 
-  var feeds = keyToFeeds(this.db, feedKey)
-  this._dbfeed = feeds[0]
-  this.feed = feeds[1]
+  var self = this
+  keyToFeeds(this.db, feedKey, function (err, dbfeed, contentfeed) {
+    if (err) return cb(err)
+    self._dbfeed = dbfeed
+    self.feed = contentfeed
+    cb(null, self)
+  })
 }
 
 inherits(Stream, events.EventEmitter)
@@ -165,16 +167,40 @@ Stream.prototype.checkpoints = function (opts) {
 Stream.prototype.verify = function (checkpoint, cb) {
   if (checkpoint.author !== this.id) return cb(new Error('incorrect author'))
   if (Buffer.compare(checkpoint._feeds[0], this.feed.key)) return cb(new Error('incorrect feed'))
+  var self = this
   var feeds = [this.feed]
+  var feedsGotten = 0
+
+  // seek to spot to make sure root hashes are loaded
+  this.feed.seek(checkpoint.byteLength - 1, { hash: true }, seeked)
+
   for (var i = 1; i < checkpoint._feeds.length; ++i) {
-    feeds[i] = keyToFeeds(this.db, checkpoint._feeds[i])[0]
+    addFeed(i)
   }
-  hashRoots(feeds, checkpoint._lengths, function (err, hash, byteLengths) {
+
+  function seeked (err) {
     if (err) return cb(err)
-    if (byteLengths[0] !== checkpoint.byteLength) return cb(new Error('incorrect byteLength'))
-    if (Buffer.compare(checkpoint.rootsHash, hash)) return cb(new Error('hash failure'))
-    cb(null, true)
-  })
+    ++feedsGotten
+    if (feedsGotten === checkpoint._feeds.length) doHash()
+  }
+
+  function addFeed (index) {
+    keyToFeeds(self.db, checkpoint._feeds[i], function (err, feed) {
+      if (err) return cb(err)
+      feeds[index] = feed
+      ++feedsGotten
+      if (feedsGotten === checkpoint._feeds.length) doHash()
+    })
+  }
+
+  function doHash () {
+    hashRoots(feeds, checkpoint._lengths, function (err, hash, byteLengths) {
+      if (err) return cb(err)
+      if (byteLengths[0] !== checkpoint.byteLength) return cb(new Error('incorrect byteLength'))
+      if (Buffer.compare(checkpoint.rootsHash, hash)) return cb(new Error('hash failure'))
+      cb(null, true)
+    })
+  }
 }
 
 Stream.prototype.createWriteStream = function () {
@@ -244,7 +270,7 @@ Stream.prototype.read = function (start, length, opts, cb) {
   function getOne (index) {
     self.feed.get(index, opts, function (err, data) {
       if (err) return cb(err)
-      blocks[index] = data
+      blocks[index - startIndex] = data
       ++completedBlocks
       if (totalBlocks === completedBlocks) finish()
     })
@@ -314,19 +340,28 @@ Stream.prototype._decodeCheckpoint = function (node, cb) {
   })
 }
 
-function keyToFeeds (db, key) {
+function keyToFeeds (db, key, cb) {
   // TODO: submit an issue / PR to hyperdb to allow for public access feeds by key
 
   // // this approach does not use private members of hyperdb but is O(n)
   // for (var i = 0; i < db.feeds; ++ i) {
   //   if (0 == Buffer.compare(key, db.feeds[i].key)) {
-  //     return [db.feeds[i], db.contentFeeds[i]]
+  //     return cb(db.feeds[i], db.contentFeeds[i])
   //   }
   // }
 
-  // this approach uses private members of hyperdb but is just a map lookup
+  // this approach uses private members of hyperdb but is just a map lookup if already available locally
   var writer = db._byKey.get(key.toString('hex'))
-  return [writer._feed, writer._contentFeed]
+  if (!writer._contentFeed) {
+    writer._feed.once('append', function () {
+      writer.head(function (err) {
+        if (err) return cb(err)
+        cb(null, writer._feed, writer._contentFeed)
+      })
+    })
+  } else {
+    cb(null, writer._feed, writer._contentFeed)
+  }
 }
 
 function feedToStreamID (feed) {

@@ -2,6 +2,7 @@
 
 var hyperstream = require('..')
 var minimist = require('minimist')
+var low = require('last-one-wins') 
 
 var opts = minimist(process.argv.slice(2))
 
@@ -13,7 +14,11 @@ if (opts.help || process.argv.length === 2) {
   console.log('  --info                    output database info')
   console.log('  --sync                    connect to a peer and synchronize with them')
   console.log('  --serve                   stay alive, communicating with peers')
+  console.log('  --pipe [key]              publicize from stdin and/or write key to stdout')
+  console.log('  --start offset            rewind stream to offset before output')
   console.log('')
+
+  process.exit(0)
 }
 
 var storage = opts.storage || require('random-access-memory')
@@ -23,6 +28,7 @@ var hs = hyperstream(storage, key)
 hs.ready(ready)
 
 var sw = null
+var outstream = null
 
 function ready() {
 
@@ -72,7 +78,85 @@ function main() {
     for (var i = 0; i < streams.length; ++ i)
       console.log('  ' + streams[i])
   }
-  if (sw && !opts.serve) {
-    sw.close()
+  if (opts.pipe) {
+    process.stdin.pipe(hs.createWriteStream())
+    if (opts.pipe === true) {
+      process.stdin.on('end', finish)
+    } else {
+      pipeout(opts.pipe, finish)
+    }
   }
+  if (sw && !opts.serve && !opts.pipe) {
+    finish()
+  }
+}
+
+function pipeout (key, cb) {
+  outstream = hs.getStream(key, function () {
+    var checkpoints = outstream.checkpoints({'reverse': true})
+    var end = 0
+    var nextend = null
+    var start = 0
+    var keepStreaming = false
+    checkpoints.next(seekValid)
+  
+    function seekValid (err, checkpoint) {
+      if (err) return cb(err)
+      if (checkpoint === null) return startStreaming()
+      outstream.verify(checkpoint, function(err) {
+        if (err) {
+          console.error(err)
+          return checkpoints.next(seekValid)
+        } else {
+          end = checkpoint.byteLength
+          startStreaming()
+        }
+      })
+    }
+  
+    var writeout = low(function(length, cb2) {
+      outstream.read(start, length, {}, function (err, data) {
+        if (err) return cb(err)
+        process.stdout.write(data)
+        start += data.length
+        cb2()
+      })
+    })
+
+    function startStreaming() {
+      keepStreaming = true
+      if (opts.start === undefined)
+        opts.start = end
+      start = opts.start
+      if (start > end) {
+        return cb(new Error('start offset is past end of verified stream'))
+      }
+      if (nextend) {
+        end = nextend
+        nextend = null
+      }
+      if (end != start) writeout(end - start)
+    }
+  
+    outstream.listen()
+    outstream.on('checkpoint', function (checkpoint) {
+      if (checkpoint.byteLength <= end) return console.error('checkpoint fails to advance')
+      outstream.verify(checkpoint, function(err) {
+        if (err) return console.error(err)
+        if (!keepStreaming) {
+          console.error('Warning: found new valid data before finding validated previous tail')
+          nextend = checkpoint.byteLength
+        } else {
+          end = checkpoint.byteLength
+          if (end != start) writeout(end - start)
+        }
+      })
+    })
+  })
+}
+
+function finish (err) {
+  if (err) console.error(err)
+  if (outstream) outstream.ignore()
+  sw.close()
 }
