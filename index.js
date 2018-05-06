@@ -143,7 +143,12 @@ Stream.prototype.listen = function () {
   }
 }
 
+Stream.prototype.listening = function () {
+  return !!this._checkpointwatcher
+}
+
 Stream.prototype.ignore = function () {
+  if (!this._checkpointwatcher) throw new Error('not listening')
   this._checkpointwatcher.destroy()
   this._checkpointwatcher = null
 }

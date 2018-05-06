@@ -80,9 +80,8 @@ function main() {
   }
   if (opts.pipe) {
     process.stdin.pipe(hs.createWriteStream())
-    if (opts.pipe === true) {
-      process.stdin.on('end', finish)
-    } else {
+    process.stdin.on('end', finish)
+    if (opts.pipe !== true) {
       pipeout(opts.pipe, finish)
     }
   }
@@ -157,6 +156,6 @@ function pipeout (key, cb) {
 
 function finish (err) {
   if (err) console.error(err)
-  if (outstream) outstream.ignore()
-  sw.close()
+  if (outstream && outstream.listening()) outstream.ignore()
+  if (sw) sw.close()
 }
