@@ -9,6 +9,8 @@
   },
   "dependencies": {
     "bclient": "0.0.2",
+    "bcoin": "^1.0.0-beta.15",
+    "callback-timeout": "^3.0.1",
     "hypercore": "^6.14.0",
     "hyperdb": "git+https://github.com/mafintosh/hyperdb#330cf0456074a21533711fdf3186c26e423a79db",
     "hyperdiscovery": "^7.1.0",

@@ -7,6 +7,9 @@ var util = require('../lib/util')
 
 var opts = minimist(process.argv.slice(2))
 
+// TODO: reading from stdin should be modular like timestamping
+//       reading from stdout could be too
+
 if (opts.help || process.argv.length === 2) {
   console.log('\nDecentralized secure binary streaming, powered by hyperdb\n')
 
@@ -19,8 +22,13 @@ if (opts.help || process.argv.length === 2) {
   console.log('  --authorize [key]         publicize a user\'s stream')
   console.log('  --pipe [key]              publicize from stdin and/or write stream to stdout')
   console.log('  --start offset            rewind stream to offset before output')
-  console.log('  --myname name             set stream name')
-  console.log('  --myowner key             set stream owner')
+  console.log('  --my-name name            set stream name')
+  console.log('  --my-owner key            set stream owner')
+  console.log('')
+  console.log('  --my-messages "timestamp" produce timestamps with this stream')
+  console.log('  --timestamp "bcoin-tip"   store blockchain tip hashes from bcoin')
+  console.log('  --bcoin-port port         port of bcoin instance')
+  console.log('  --bcoin-host host         address of bcoin instance')
   console.log('')
 
   process.exit(0)
@@ -50,6 +58,9 @@ function ready() {
 
   if (opts.sync || opts.serve) {
     sw = require('hyperdiscovery')(hs.db)
+    if (opts.info) {
+      console.log('Connecting to hyperdiscovery network.')
+    }
   }
 
   if (opts.info) {
@@ -82,15 +93,15 @@ function ready() {
 }
 
 function setmetadata () {
-  if (!opts.myname && !opts.myowner) return streamsOut()
 
-  var metadata = hs.localStream.metadata
-  if (opts.myname) metadata.name = opts.myname
-  if (opts.myowner) metadata.owner = opts.myowner
+  var metadata = hs.localStream.generateMetadata({}, opts)
+  if (!Object.keys(metadata).length) return streamsOut()
+
+  var metadata = hs.localStream.generateMetadata({...hs.localStream.metadata}, opts)
 
   hs.localStream.setMetadata(metadata, function (err, metadata) {
     if (err) console.error(err)
-    streamsOut ()
+    streamsOut()
   })
 }
 
@@ -140,7 +151,9 @@ function streamsOut () {
 
     stream.findValidCheckpoint(null, firstGoodCheckpoint, startingBadCheckpoint)
 
-    function startingBadCheckpoint () { ++startingBadCheckpoints }
+    function startingBadCheckpoint () {
+      ++startingBadCheckpoints
+    }
     function firstGoodCheckpoint (err, checkpoint) {
       if (err) {
         streamErr = err
@@ -170,7 +183,7 @@ function streamsOut () {
     str += ' ' + numValidatedEnd + 'B'
     if (streamLen > numValidatedEnd) {
       var remaining = streamLen - numValidatedEnd
-      str += ' (+' + remaining + 'B unverified)'
+      str += ' (+' + remaining + 'B unhashed)'
     }
     console.log(str)
     nextloop()
@@ -200,7 +213,10 @@ function main (err) {
         pipeout(opts.pipe, finish)
       }
     }
-    if (sw && !opts.serve && !opts.pipe) {
+    if (opts.serve || opts.start) {
+      hs.localStream.start(()=>{}, finish)
+    }
+    if (sw && !opts.serve && !opts.pipe && !opts.start) {
       finish()
     }
   } catch(e) {
