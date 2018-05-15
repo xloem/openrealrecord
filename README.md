@@ -10,9 +10,9 @@ The design of openrealrecord should be suitable for recording and sharing inform
 
 - authenticated: the hyperdb backend provides that every stream has a private key that signs all data, and streams can only be viewed by those with the public key.  Publishing to a group may only be done if a pre-existing publisher authorizes the stream key.
 
-- provable: because every update includes a hash of all previous updates and a cryptographic signature, the data can be verified for correctness.  Interchanging hashes with block chains allows the real world time of every block of data to be proven within the granularity of the blocktime of the chain.  These hashes need only by made by one feed in a tree to prove the times of every other feed in the tree.  Making a norm of publishing a feed to a blockchain in a standard way allows for proving that the data in question was the first produced of its kind.
+- provable: because every update includes a hash of all previous updates and a cryptographic signature, the data can be verified for correctness.  Interchanging hashes with block chains allows the real world time of every block of data to be proven within the granularity of the blocktime of the chain.  These hashes need only by made by one feed in a tree to prove the times of every other feed in the tree.  Making a norm of publishing a feed to a blockchain in a standard way allows for proving that the data in question was the first produced of its kind.  Because everything is hashed together into one final tree, it is apparent when devices are generating data and when they are failing to anybody with access to the tree.
 
-- decentralized: hypercore requires no server.  TODO: review default network backends, make it easy to manually connect peers
+- decentralized: hypercore requires no server.  TODO: review default network backends (gnunet?), make it easy to manually connect peers  TODO: make it easy to insert user-provided network connections such as manual pipes, sockets, and sneakernet
 
 - censorship-resistant: announcing to blockchains allows global connectivity.  a provable tree of hashes means that it is incredibly difficult to alter data after the fact.
 
