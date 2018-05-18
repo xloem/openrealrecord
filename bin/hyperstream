@@ -37,7 +37,7 @@ if (opts.help || process.argv.length === 2) {
 var storage = opts.storage || require('random-access-memory')
 var key = opts.db && Buffer.from(opts.db, 'base64')
 
-var hs = hyperstream(storage, key)
+var hs = hyperstream(storage, key, {tracedebug: opts.tracedebug})
 hs.ready(ready)
 
 var sw = null
@@ -124,10 +124,12 @@ function streamsOut () {
   streamOut()
  
   function streamOut() {
+    if (opts.tracedebug) console.log('streamOut')
     hs.getStream(streams[idx], gotStream)
   }
 
   function gotStream (err, s) {
+    if (opts.tracedebug) console.log('gotStream', err)
     stream = s
     if (err) {
       streamErr = err
@@ -142,6 +144,7 @@ function streamsOut () {
   }
 
   function validatedMetadata (err) {
+    if (opts.tracedebug) console.log('validatedMetadata', err)
     if (err) streamErr = err
 
     startingBadCheckpoints = 0
@@ -152,9 +155,11 @@ function streamsOut () {
     stream.findValidCheckpoint(null, firstGoodCheckpoint, startingBadCheckpoint)
 
     function startingBadCheckpoint () {
+      if (opts.tracedebug) console.log('startingBadCheckpoint')
       ++startingBadCheckpoints
     }
     function firstGoodCheckpoint (err, checkpoint) {
+      if (opts.tracedebug) console.log('firstGoodCheckpoint', err)
       if (err) {
         streamErr = err
       }
@@ -165,8 +170,12 @@ function streamsOut () {
         stream.findValidCheckpoint({'reverse': true}, lastGoodCheckpoint, endingBadCheckpoint)
       }
     }
-    function endingBadCheckpoint () { ++endingBadCheckpoints }
+    function endingBadCheckpoint () {
+      if (opts.tracedebug) console.log('endingBadCheckpoint')
+      ++endingBadCheckpoints
+    }
     function lastGoodCheckpoint (err, checkpoint) {
+      if (opts.tracedebug) console.log('lastGoodCheckpoint', err)
       if (err) streamErr = err
       else if (checkpoint) numValidatedEnd = checkpoint.byteLength
       summarize()
