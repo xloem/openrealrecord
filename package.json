@@ -16,7 +16,8 @@
     "hyperdiscovery": "^7.1.0",
     "minimist": "^1.2.0",
     "protocol-buffers-encodings": "^1.1.0",
-    "random-access-memory": "^3.0.0"
+    "random-access-memory": "^3.0.0",
+    "sodium-native": "^2.1.3"
   },
   "devDependencies": {
     "protocol-buffers": "^4.0.4",
