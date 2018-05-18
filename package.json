@@ -12,11 +12,12 @@
     "bcoin": "^1.0.0-beta.15",
     "callback-timeout": "^3.0.1",
     "hypercore": "^6.14.0",
-    "hyperdb": "git+https://github.com/mafintosh/hyperdb#330cf0456074a21533711fdf3186c26e423a79db",
+    "hyperdb": "^3.0.0-3",
     "hyperdiscovery": "^7.1.0",
     "minimist": "^1.2.0",
     "protocol-buffers-encodings": "^1.1.0",
-    "random-access-memory": "^3.0.0"
+    "random-access-memory": "^3.0.0",
+    "sodium-native": "^2.1.3"
   },
   "devDependencies": {
     "protocol-buffers": "^4.0.4",
