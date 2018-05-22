@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-var hyperstream = require('..')
+var openrealrecord = require('..')
 var minimist = require('minimist')
 var low = require('last-one-wins')
 var util = require('../lib/util')
@@ -37,8 +37,8 @@ if (opts.help || process.argv.length === 2) {
 var storage = opts.storage || require('random-access-memory')
 var key = opts.db && Buffer.from(opts.db, 'base64')
 
-var hs = hyperstream(storage, key, {tracedebug: opts.tracedebug})
-hs.ready(ready)
+var orr = openrealrecord(storage, key, {tracedebug: opts.tracedebug})
+orr.ready(ready)
 
 var sw = null
 var outstream = null
@@ -57,19 +57,19 @@ function ready() {
   }
 
   if (opts.sync || opts.serve) {
-    sw = require('hyperdiscovery')(hs.db)
+    sw = require('hyperdiscovery')(orr.db)
     if (opts.info) {
       console.log('Connecting to hyperdiscovery network.')
     }
   }
 
   if (opts.info) {
-    console.log('Database: ' + util.keyToID(hs.db.key))
-    console.log('User: ' + util.keyToID(hs.db.local.key))
+    console.log('Database: ' + util.keyToID(orr.db.key))
+    console.log('User: ' + util.keyToID(orr.db.local.key))
 
     if (opts.verbose) {
-      hs.db.on('remote-update', function(feed, id) { console.log('DB: remote-update ' + feed.key.toString('base64') + ' #' + id) })
-      hs.db.on('append', function(feed, id) { console.log('DB: append ' + feed.key.toString('base64') + ' #' + id) })
+      orr.db.on('remote-update', function(feed, id) { console.log('DB: remote-update ' + feed.key.toString('base64') + ' #' + id) })
+      orr.db.on('append', function(feed, id) { console.log('DB: append ' + feed.key.toString('base64') + ' #' + id) })
     }
 
     if (sw) {
@@ -86,7 +86,7 @@ function ready() {
   }
 
   if (opts.sync) {
-    hs.db.once('remote-update', setmetadata)
+    orr.db.once('remote-update', setmetadata)
   } else {
     setmetadata()
   }
@@ -94,12 +94,12 @@ function ready() {
 
 function setmetadata () {
 
-  var metadata = hs.localStream.generateMetadata({}, opts)
+  var metadata = orr.localStream.generateMetadata({}, opts)
   if (!Object.keys(metadata).length) return streamsOut()
 
-  var metadata = hs.localStream.generateMetadata({...hs.localStream.metadata}, opts)
+  var metadata = orr.localStream.generateMetadata({...orr.localStream.metadata}, opts)
 
-  hs.localStream.setMetadata(metadata, function (err, metadata) {
+  orr.localStream.setMetadata(metadata, function (err, metadata) {
     if (err) console.error(err)
     streamsOut()
   })
@@ -108,7 +108,7 @@ function setmetadata () {
 function streamsOut () {
   if (!opts.info) return main()
 
-  var streams = hs.getStreams()
+  var streams = orr.getStreams()
   console.log(streams.length + ' Streams:')
 
   var idx = 0
@@ -125,7 +125,7 @@ function streamsOut () {
  
   function streamOut() {
     if (opts.tracedebug) console.log('streamOut')
-    hs.getStream(streams[idx], gotStream)
+    orr.getStream(streams[idx], gotStream)
   }
 
   function gotStream (err, s) {
@@ -211,10 +211,10 @@ function main (err) {
     if (opts.authorize) {
       var authorizee = opts.authorize
       opts.authorize = null
-      return hs.db.authorize(Buffer.from(authorizee, 'base64'), main)
+      return orr.db.authorize(Buffer.from(authorizee, 'base64'), main)
     }
     if (opts.pipe) {
-      var writeStream = hs.createWriteStream()
+      var writeStream = orr.createWriteStream()
       writeStream.on('error', console.error)
       process.stdin.pipe(writeStream)
       process.stdin.on('end', finish)
@@ -223,7 +223,7 @@ function main (err) {
       }
     }
     if (opts.serve || opts.start) {
-      hs.localStream.start(()=>{}, finish)
+      orr.localStream.start(()=>{}, finish)
     }
     if (sw && !opts.serve && !opts.pipe && !opts.start) {
       finish()
@@ -234,7 +234,7 @@ function main (err) {
 }
 
 function pipeout (key, cb) {
-  outstream = hs.getStream(key, function (err) {
+  outstream = orr.getStream(key, function (err) {
     if (err) return finish(err)
     var end = 0
     var nextend = null
