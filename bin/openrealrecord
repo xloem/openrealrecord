@@ -57,10 +57,23 @@ function ready() {
   }
 
   if (opts.sync || opts.serve) {
-    sw = require('hyperdiscovery')(orr.db)
+    sw = require('hyperdiscovery')(orr.db, {port:3283})
     if (opts.info) {
       console.log('Connecting to hyperdiscovery network.')
     }
+    sw.once('error', function(err) {
+      // TODO: this quick hack should be replaced with perhaps proper IPC
+      // it makes assumptions about the undocumented even ordering inside swarm-discovery
+      // and it assumes that if somebody is listening on our port, it is another copy of us
+      if (err.syscall === 'listen' && err.code === 'EADDRINUSE') {
+        console.log('Port ' + err.port + ' already in use; attempting to connect to it.')
+        sw.once('listening', function() {
+          sw.addPeer(orr.db.discoveryKey, err)
+        })
+      } else {
+        throw(err)
+      }
+    })
   }
 
   if (opts.info) {
