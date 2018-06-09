@@ -3,7 +3,9 @@
 var openrealrecord = require('..')
 var minimist = require('minimist')
 var low = require('last-one-wins')
+var path = require('path')
 var util = require('../lib/util')
+var sparsestorage = require('../lib/sparse-storage')
 
 var opts = minimist(process.argv.slice(2))
 
@@ -21,6 +23,7 @@ if (opts.help || process.argv.length === 2) {
   console.log('  --serve                   connect to the network and communicate until terminated')
   console.log('  --authorize [key]         publicize a user\'s stream')
   console.log('  --pipe [key]              publicize from stdin and/or write stream to stdout')
+  console.log('  --incache minMB:maxMB     delete cached data down to minMB when exceeds maxMB')
   console.log('  --start offset            rewind stream to offset before output')
   console.log('  --my-name name            set stream name')
   console.log('  --my-owner key            set stream owner')
@@ -34,7 +37,14 @@ if (opts.help || process.argv.length === 2) {
   process.exit(0)
 }
 
-var storage = opts.storage || require('random-access-memory')
+var storage
+if (opts.storage) {
+	storage = function (name) {
+		return sparsestorage(path.join(opts.storage, name))
+	}
+} else {
+	storage = require('random-access-memory')
+}
 var key = opts.db && Buffer.from(opts.db, 'base64')
 
 var orr = openrealrecord(storage, key, {tracedebug: opts.tracedebug})
@@ -237,6 +247,14 @@ function main (err) {
       writeStream.on('error', console.error)
       process.stdin.pipe(writeStream)
       process.stdin.on('end', finish)
+      if (opts.incache) {
+        incachemarkbytes = 0
+        incachemarkblocks = 0
+	var incache = opts.incache.split(':')
+        incacheminsize = incache[0] * 1024 * 1024
+	incachemaxsize = incache[1] * 1024 * 1024
+        orr.localStream.feed.on('append', onappendshrinkincache)
+      }
       if (opts.pipe !== true) {
         pipeout(opts.pipe, finish)
       }
@@ -249,6 +267,43 @@ function main (err) {
     }
   } catch(e) {
     finish(e)
+  }
+}
+
+// only store the last cache bytes if enabled
+var incachemarkbytes
+var incachemarkblocks
+var incachesize
+function onappendshrinkincache() {
+  var feed = orr.localStream.feed
+  var len = feed.byteLength
+  if (len - incachemarkbytes >= incachemaxsize) {
+    feed.removeListener('append', onappendshrinkincache)
+    var destbytes = len - incacheminsize
+    var destblocks
+    feed.seek(destbytes, function (err, index, offset) {
+      if (err) return console.log('Seeking to clear cache ERROR: ' + err)
+      if (index >= feed.length - 1) {
+        destblocks = feed.length - 1
+        destbytes -= offset
+        shrink()
+      } else {
+        destblocks = index
+        feed.get(destblocks, { wait: false, valueEncoding: 'binary' }, function (err, data) {
+          if (!err) destbytes += data.length - offset
+          shrink()
+        })
+      }
+    })
+  }
+
+  function shrink() {
+    feed.clear(incachemarkblocks, destblocks, shrank)
+  }
+  function shrank() {
+    incachemarkblocks = destblocks
+    incachemarkbytes = destbytes
+    feed.on('append', onappendshrinkincache)
   }
 }
 
@@ -314,3 +369,7 @@ function finish (err) {
   if (outstream && outstream.listening()) outstream.ignore()
   if (sw) sw.close()
 }
+
+
+
+
