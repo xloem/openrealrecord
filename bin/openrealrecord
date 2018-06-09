@@ -38,13 +38,14 @@ var storage = opts.storage || require('random-access-memory')
 var key = opts.db && Buffer.from(opts.db, 'base64')
 
 var orr = openrealrecord(storage, key, {tracedebug: opts.tracedebug})
-orr.ready(ready)
+
+orr.db.ready(orrDbReady)
 
 var sw = null
 var outstream = null
 
-function ready() {
-
+function orrDbReady() {
+  
   if (!opts.pipe || opts.pipe === true) {
     if (!opts.quiet)
       opts.info = true
@@ -55,7 +56,7 @@ function ready() {
   if (opts.info && !opts.storage) {
     console.log('Generated an in-memory database.')
   }
-
+  
   if (opts.sync || opts.serve) {
     sw = require('hyperdiscovery')(orr.db, {port:3283})
     if (opts.info) {
@@ -75,6 +76,11 @@ function ready() {
       }
     })
   }
+
+  orr.ready(orrReady)
+}
+
+function orrReady() {
 
   if (opts.info) {
     console.log('Database: ' + util.keyToID(orr.db.key))
