@@ -320,12 +320,19 @@ function pipeout (key, cb) {
       startStreaming()
     }, console.error)
 
+    const BLOCKSIZE = 1024 * 1024
     var writeout = low(function(length, cb2) {
+      var remaining = 0
+      if (length > BLOCKSIZE) {
+        remaining = length - BLOCKSIZE
+        length = BLOCKSIZE
+      }
       outstream.read(start, length, {}, function (err, data) {
         if (err) return cb(err)
         process.stdout.write(data)
         start += data.length
         cb2()
+        if (remaining) writeout(remaining)
       })
     })
 
