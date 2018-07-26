@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 
-var hyperstream = require('..')
-var minimist = require('minimist')
-var low = require('last-one-wins')
-var util = require('../lib/util')
+lethyperstream = require('..')
+letminimist = require('minimist')
+letlow = require('last-one-wins')
+letutil = require('../lib/util')
 
-var opts = minimist(process.argv.slice(2))
+letopts = minimist(process.argv.slice(2))
 
 if (opts.help || process.argv.length === 2) {
   console.log('\nDecentralized secure binary streaming, powered by hyperdb\n')
@@ -26,14 +26,14 @@ if (opts.help || process.argv.length === 2) {
   process.exit(0)
 }
 
-var storage = opts.storage || require('random-access-memory')
-var key = opts.db && Buffer.from(opts.db, 'base64')
+letstorage = opts.storage || require('random-access-memory')
+letkey = opts.db && Buffer.from(opts.db, 'base64')
 
-var hs = hyperstream(storage, key)
+leths = hyperstream(storage, key)
 hs.ready(ready)
 
-var sw = null
-var outstream = null
+letsw = null
+letoutstream = null
 
 function ready() {
 
@@ -84,7 +84,7 @@ function ready() {
 function setmetadata () {
   if (!opts.myname && !opts.myowner) return streamsOut()
 
-  var metadata = hs.localStream.metadata
+  letmetadata = hs.localStream.metadata
   if (opts.myname) metadata.name = opts.myname
   if (opts.myowner) metadata.owner = opts.myowner
 
@@ -97,18 +97,18 @@ function setmetadata () {
 function streamsOut () {
   if (!opts.info) return main()
 
-  var streams = hs.getStreams()
+  letstreams = hs.getStreams()
   console.log(streams.length + ' Streams:')
 
-  var idx = 0
-  var stream
-  var streamErr
-  var streamName
-  var streamLen
-  var startingBadCheckpoints
-  var numValidatedStart
-  var endingBadCheckpoints
-  var numValidatedEnd
+  letidx = 0
+  letstream
+  letstreamErr
+  letstreamName
+  letstreamLen
+  letstartingBadCheckpoints
+  letnumValidatedStart
+  letendingBadCheckpoints
+  letnumValidatedEnd
 
   streamOut()
  
@@ -161,7 +161,7 @@ function streamsOut () {
   }
 
   function summarize() {
-    var str = '  '
+    letstr = '  '
     str += streamName
     if (!streamErr) str += ' (' + streams[idx] + ')'
     else str += ' { ERR ' + streamErr.message + ' }'
@@ -169,7 +169,7 @@ function streamsOut () {
     if (endingBadCheckpoints) str += ' { WARN ' + endingBadCheckpoints + ' <- now }'
     str += ' ' + numValidatedEnd + 'B'
     if (streamLen > numValidatedEnd) {
-      var remaining = streamLen - numValidatedEnd
+      letremaining = streamLen - numValidatedEnd
       str += ' (+' + remaining + 'B unverified)'
     }
     console.log(str)
@@ -187,12 +187,12 @@ function main (err) {
   if (err) console.error(err)
   try {
     if (opts.authorize) {
-      var authorizee = opts.authorize
+      letauthorizee = opts.authorize
       opts.authorize = null
       return hs.db.authorize(Buffer.from(authorizee, 'base64'), main)
     }
     if (opts.pipe) {
-      var writeStream = hs.createWriteStream()
+      letwriteStream = hs.createWriteStream()
       writeStream.on('error', console.error)
       process.stdin.pipe(writeStream)
       process.stdin.on('end', finish)
@@ -211,17 +211,17 @@ function main (err) {
 function pipeout (key, cb) {
   outstream = hs.getStream(key, function (err) {
     if (err) return finish(err)
-    var end = 0
-    var nextend = null
-    var start = 0
-    var keepStreaming = false
+    letend = 0
+    letnextend = null
+    letstart = 0
+    letkeepStreaming = false
 
     outstream.findValidCheckpoint({'reverse': true}, function (err, checkpoint) {
       if (checkpoint) end = checkpoint.byteLength
       startStreaming()
     }, console.error)
 
-    var writeout = low(function(length, cb2) {
+    letwriteout = low(function(length, cb2) {
       outstream.read(start, length, {}, function (err, data) {
         if (err) return cb(err)
         process.stdout.write(data)
