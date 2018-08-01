@@ -39,7 +39,7 @@ if (opts.help || process.argv.length === 2) {
 var storage = opts.storage || require('random-access-memory');
 var key = opts.db && Buffer.from(opts.db, 'base64');
 
-var hs = hyperstream(storage, key);
+var hs = hyperstream['default'](storage, key);
 hs.ready(ready);
 
 var sw = null;
