@@ -1,272 +1,326 @@
 #!/usr/bin/env node
 
-var hyperstream = require('..')
-var minimist = require('minimist')
-var low = require('last-one-wins')
-var util = require('../lib/util')
+var hyperstream = require('..');
+var minimist = require('minimist');
+var low = require('last-one-wins');
+var util = require('../lib/util');
 
-var opts = minimist(process.argv.slice(2))
+var opts = minimist(process.argv.slice(2));
 
 if (opts.help || process.argv.length === 2) {
-  console.log('\nDecentralized secure binary streaming, powered by hyperdb\n')
+  console.log('\nDecentralized secure binary streaming, powered by hyperdb\n');
 
-  console.log('  --storage path            save database to path')
-  console.log('  --db key                  database to use')
-  console.log('  --quiet                   do not output anything')
-  console.log('  --info                    output database info (default when not piping out)')
-  console.log('  --sync                    sync with a network peer before doing anything else')
-  console.log('  --serve                   connect to the network and communicate until terminated')
-  console.log('  --authorize [key]         publicize a user\'s stream')
-  console.log('  --pipe [key]              publicize from stdin and/or write stream to stdout')
-  console.log('  --start offset            rewind stream to offset before output')
-  console.log('  --myname name             set stream name')
-  console.log('  --myowner key             set stream owner')
-  console.log('')
+  console.log('  --storage path            save database to path');
+  console.log('  --db key                  database to use');
+  console.log('  --quiet                   do not output anything');
+  console.log(
+    '  --info                    output database info (default when not piping out)'
+  );
+  console.log(
+    '  --sync                    sync with a network peer before doing anything else'
+  );
+  console.log(
+    '  --serve                   connect to the network and communicate until terminated'
+  );
+  console.log("  --authorize [key]         publicize a user's stream");
+  console.log(
+    '  --pipe [key]              publicize from stdin and/or write stream to stdout'
+  );
+  console.log(
+    '  --start offset            rewind stream to offset before output'
+  );
+  console.log('  --myname name             set stream name');
+  console.log('  --myowner key             set stream owner');
+  console.log('');
 
-  process.exit(0)
+  process.exit(0);
 }
 
-var storage = opts.storage || require('random-access-memory')
-var key = opts.db && Buffer.from(opts.db, 'base64')
+var storage = opts.storage || require('random-access-memory');
+var key = opts.db && Buffer.from(opts.db, 'base64');
 
-var hs = hyperstream(storage, key)
-hs.ready(ready)
+var hs = hyperstream['default'](storage, key);
+hs.ready(ready);
 
-var sw = null
-var outstream = null
+var sw = null;
+var outstream = null;
 
 function ready() {
-
   if (!opts.pipe || opts.pipe === true) {
-    if (!opts.quiet)
-      opts.info = true
+    if (!opts.quiet) opts.info = true;
   }
   if (!opts.storage && !opts.db) {
-    opts.serve = true
+    opts.serve = true;
   }
   if (opts.info && !opts.storage) {
-    console.log('Generated an in-memory database.')
+    console.log('Generated an in-memory database.');
   }
 
   if (opts.sync || opts.serve) {
-    sw = require('hyperdiscovery')(hs.db)
+    sw = require('hyperdiscovery')(hs.db);
   }
 
   if (opts.info) {
-    console.log('Database: ' + util.keyToID(hs.db.key))
-    console.log('User: ' + util.keyToID(hs.db.local.key))
+    console.log('Database: ' + util.keyToID(hs.db.key));
+    console.log('User: ' + util.keyToID(hs.db.local.key));
 
     if (opts.verbose) {
-      hs.db.on('remote-update', function(feed, id) { console.log('DB: remote-update ' + feed.key.toString('base64') + ' #' + id) })
-      hs.db.on('append', function(feed, id) { console.log('DB: append ' + feed.key.toString('base64') + ' #' + id) })
+      hs.db.on('remote-update', function(feed, id) {
+        console.log(
+          'DB: remote-update ' + feed.key.toString('base64') + ' #' + id
+        );
+      });
+      hs.db.on('append', function(feed, id) {
+        console.log('DB: append ' + feed.key.toString('base64') + ' #' + id);
+      });
     }
 
     if (sw) {
       if (opts.verbose) {
-        sw.on('close', function() { console.log('NET: close') })
-        sw.on('peer', function(peer) { console.log('NET: peer ' + peer.id) })
-        sw.on('drop', function(peer) { console.log('NET: drop ' + peer.id) })
-        sw.on('connecting', function(next) { console.log('NET: connecting ' + next.id) })
-        sw.on('connection', function(connection, info) { console.log('NET: connection ' + connection.key.toString('base64') + ' (' + info.type +')') })
-        sw.on('error', function(err) { console.log('NET: error ' + err) })
-        sw.on('listening', function() { console.log('NET: listening') })
+        sw.on('close', function() {
+          console.log('NET: close');
+        });
+        sw.on('peer', function(peer) {
+          console.log('NET: peer ' + peer.id);
+        });
+        sw.on('drop', function(peer) {
+          console.log('NET: drop ' + peer.id);
+        });
+        sw.on('connecting', function(next) {
+          console.log('NET: connecting ' + next.id);
+        });
+        sw.on('connection', function(connection, info) {
+          console.log(
+            'NET: connection ' +
+              connection.key.toString('base64') +
+              ' (' +
+              info.type +
+              ')'
+          );
+        });
+        sw.on('error', function(err) {
+          console.log('NET: error ' + err);
+        });
+        sw.on('listening', function() {
+          console.log('NET: listening');
+        });
       }
     }
   }
 
   if (opts.sync) {
-    hs.db.once('remote-update', setmetadata)
+    hs.db.once('remote-update', setmetadata);
   } else {
-    setmetadata()
+    setmetadata();
   }
 }
 
-function setmetadata () {
-  if (!opts.myname && !opts.myowner) return streamsOut()
+function setmetadata() {
+  if (!opts.myname && !opts.myowner) return streamsOut();
 
-  var metadata = hs.localStream.metadata
-  if (opts.myname) metadata.name = opts.myname
-  if (opts.myowner) metadata.owner = opts.myowner
+  var metadata = hs.localStream.metadata;
+  if (opts.myname) metadata.name = opts.myname;
+  if (opts.myowner) metadata.owner = opts.myowner;
 
-  hs.localStream.setMetadata(metadata, function (err, metadata) {
-    if (err) console.error(err)
-    streamsOut ()
-  })
+  hs.localStream.setMetadata(metadata, function(err, metadata) {
+    if (err) console.error(err);
+    streamsOut();
+  });
 }
 
-function streamsOut () {
-  if (!opts.info) return main()
+function streamsOut() {
+  if (!opts.info) return main();
 
-  var streams = hs.getStreams()
-  console.log(streams.length + ' Streams:')
+  var streams = hs.getStreams();
+  console.log(streams.length + ' Streams:');
 
-  var idx = 0
-  var stream
-  var streamErr
-  var streamName
-  var streamLen
-  var startingBadCheckpoints
-  var numValidatedStart
-  var endingBadCheckpoints
-  var numValidatedEnd
+  var idx = 0;
+  var stream;
+  var streamErr;
+  var streamName;
+  var streamLen;
+  var startingBadCheckpoints;
+  var numValidatedStart;
+  var endingBadCheckpoints;
+  var numValidatedEnd;
 
-  streamOut()
- 
+  streamOut();
+
   function streamOut() {
-    hs.getStream(streams[idx], gotStream)
+    hs.getStream(streams[idx], gotStream);
   }
 
-  function gotStream (err, s) {
-    stream = s
+  function gotStream(err, s) {
+    stream = s;
     if (err) {
-      streamErr = err
-      streamName = streams[idx]
-      streamLen = 0
-      return summarize()
+      streamErr = err;
+      streamName = streams[idx];
+      streamLen = 0;
+      return summarize();
     }
-    streamErr = null
-    streamName = stream.metadata.name
-    streamLen = stream.feed.byteLength
-    stream.validateMetadata(stream.metadata, validatedMetadata)
+    streamErr = null;
+    streamName = stream.metadata.name;
+    streamLen = stream.feed.byteLength;
+    stream.validateMetadata(stream.metadata, validatedMetadata);
   }
 
-  function validatedMetadata (err) {
-    if (err) streamErr = err
+  function validatedMetadata(err) {
+    if (err) streamErr = err;
 
-    startingBadCheckpoints = 0
-    numValidatedStart = 0
-    endingBadCheckpoints = 0
-    numValidatedEnd = 0
+    startingBadCheckpoints = 0;
+    numValidatedStart = 0;
+    endingBadCheckpoints = 0;
+    numValidatedEnd = 0;
 
-    stream.findValidCheckpoint(null, firstGoodCheckpoint, startingBadCheckpoint)
+    stream.findValidCheckpoint(
+      null,
+      firstGoodCheckpoint,
+      startingBadCheckpoint
+    );
 
-    function startingBadCheckpoint () { ++startingBadCheckpoints }
-    function firstGoodCheckpoint (err, checkpoint) {
+    function startingBadCheckpoint() {
+      ++startingBadCheckpoints;
+    }
+    function firstGoodCheckpoint(err, checkpoint) {
       if (err) {
-        streamErr = err
+        streamErr = err;
       }
       if (!checkpoint) {
-        summarize()
+        summarize();
       } else {
-        numValidatedStart = checkpoint.byteLength
-        stream.findValidCheckpoint({'reverse': true}, lastGoodCheckpoint, endingBadCheckpoint)
+        numValidatedStart = checkpoint.byteLength;
+        stream.findValidCheckpoint(
+          { reverse: true },
+          lastGoodCheckpoint,
+          endingBadCheckpoint
+        );
       }
     }
-    function endingBadCheckpoint () { ++endingBadCheckpoints }
-    function lastGoodCheckpoint (err, checkpoint) {
-      if (err) streamErr = err
-      else if (checkpoint) numValidatedEnd = checkpoint.byteLength
-      summarize()
+    function endingBadCheckpoint() {
+      ++endingBadCheckpoints;
+    }
+    function lastGoodCheckpoint(err, checkpoint) {
+      if (err) streamErr = err;
+      else if (checkpoint) numValidatedEnd = checkpoint.byteLength;
+      summarize();
     }
   }
 
   function summarize() {
-    var str = '  '
-    str += streamName
-    if (!streamErr) str += ' (' + streams[idx] + ')'
-    else str += ' { ERR ' + streamErr.message + ' }'
-    if (startingBadCheckpoints) str += ' { WARN genesis -> ' + startingBadCheckpoints + ' bad }'
-    if (endingBadCheckpoints) str += ' { WARN ' + endingBadCheckpoints + ' <- now }'
-    str += ' ' + numValidatedEnd + 'B'
+    var str = '  ';
+    str += streamName;
+    if (!streamErr) str += ' (' + streams[idx] + ')';
+    else str += ' { ERR ' + streamErr.message + ' }';
+    if (startingBadCheckpoints)
+      str += ' { WARN genesis -> ' + startingBadCheckpoints + ' bad }';
+    if (endingBadCheckpoints)
+      str += ' { WARN ' + endingBadCheckpoints + ' <- now }';
+    str += ' ' + numValidatedEnd + 'B';
     if (streamLen > numValidatedEnd) {
-      var remaining = streamLen - numValidatedEnd
-      str += ' (+' + remaining + 'B unverified)'
+      var remaining = streamLen - numValidatedEnd;
+      str += ' (+' + remaining + 'B unverified)';
     }
-    console.log(str)
-    nextloop()
+    console.log(str);
+    nextloop();
   }
 
   function nextloop() {
-    ++idx
-    if (idx < streams.length) return streamOut()
-    else return main()
+    ++idx;
+    if (idx < streams.length) return streamOut();
+    else return main();
   }
 }
 
-function main (err) {
-  if (err) console.error(err)
+function main(err) {
+  if (err) console.error(err);
   try {
     if (opts.authorize) {
-      var authorizee = opts.authorize
-      opts.authorize = null
-      return hs.db.authorize(Buffer.from(authorizee, 'base64'), main)
+      var authorizee = opts.authorize;
+      opts.authorize = null;
+      return hs.db.authorize(Buffer.from(authorizee, 'base64'), main);
     }
     if (opts.pipe) {
-      var writeStream = hs.createWriteStream()
-      writeStream.on('error', console.error)
-      process.stdin.pipe(writeStream)
-      process.stdin.on('end', finish)
+      var writeStream = hs.createWriteStream();
+      writeStream.on('error', console.error);
+      process.stdin.pipe(writeStream);
+      process.stdin.on('end', finish);
       if (opts.pipe !== true) {
-        pipeout(opts.pipe, finish)
+        pipeout(opts.pipe, finish);
       }
     }
     if (sw && !opts.serve && !opts.pipe) {
-      finish()
+      finish();
     }
-  } catch(e) {
-    finish(e)
+  } catch (e) {
+    finish(e);
   }
 }
 
-function pipeout (key, cb) {
-  outstream = hs.getStream(key, function (err) {
-    if (err) return finish(err)
-    var end = 0
-    var nextend = null
-    var start = 0
-    var keepStreaming = false
+function pipeout(key, cb) {
+  outstream = hs.getStream(key, function(err) {
+    if (err) return finish(err);
+    var end = 0;
+    var nextend = null;
+    var start = 0;
+    var keepStreaming = false;
 
-    outstream.findValidCheckpoint({'reverse': true}, function (err, checkpoint) {
-      if (checkpoint) end = checkpoint.byteLength
-      startStreaming()
-    }, console.error)
+    outstream.findValidCheckpoint(
+      { reverse: true },
+      function(err, checkpoint) {
+        if (checkpoint) end = checkpoint.byteLength;
+        startStreaming();
+      },
+      console.error
+    );
 
     var writeout = low(function(length, cb2) {
-      outstream.read(start, length, {}, function (err, data) {
-        if (err) return cb(err)
-        process.stdout.write(data)
-        start += data.length
-        cb2()
-      })
-    })
+      outstream.read(start, length, {}, function(err, data) {
+        if (err) return cb(err);
+        process.stdout.write(data);
+        start += data.length;
+        cb2();
+      });
+    });
 
     function startStreaming() {
-      keepStreaming = true
-      if (opts.start === undefined)
-        opts.start = end
-      start = opts.start
+      keepStreaming = true;
+      if (opts.start === undefined) opts.start = end;
+      start = opts.start;
       if (start > end) {
-        return cb(new Error('start offset is past end of verified stream'))
+        return cb(new Error('start offset is past end of verified stream'));
       }
       if (nextend) {
-        end = nextend
-        nextend = null
+        end = nextend;
+        nextend = null;
       }
-      if (end != start) writeout(end - start)
+      if (end != start) writeout(end - start);
     }
 
-    outstream.listen()
-    outstream.on('error', function (err) {
-      console.error(err)
-    })
-    outstream.on('checkpoint', function (checkpoint) {
-      if (checkpoint.byteLength <= end) return console.error('checkpoint fails to advance')
+    outstream.listen();
+    outstream.on('error', function(err) {
+      console.error(err);
+    });
+    outstream.on('checkpoint', function(checkpoint) {
+      if (checkpoint.byteLength <= end)
+        return console.error('checkpoint fails to advance');
       outstream.verify(checkpoint, function(err) {
-        if (err) return console.error(err)
+        if (err) return console.error(err);
         if (!keepStreaming) {
-          console.error('Warning: found new valid data before finding validated previous tail')
-          nextend = checkpoint.byteLength
+          console.error(
+            'Warning: found new valid data before finding validated previous tail'
+          );
+          nextend = checkpoint.byteLength;
         } else {
-          end = checkpoint.byteLength
-          if (end != start) writeout(end - start)
+          end = checkpoint.byteLength;
+          if (end != start) writeout(end - start);
         }
-      })
-    })
-  })
+      });
+    });
+  });
 }
 
-function finish (err) {
-  if (err) console.error(err)
-  if (outstream && outstream.listening()) outstream.ignore()
-  if (sw) sw.close()
+function finish(err) {
+  if (err) console.error(err);
+  if (outstream && outstream.listening()) outstream.ignore();
+  if (sw) sw.close();
 }

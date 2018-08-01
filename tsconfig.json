@@ -1,0 +1,16 @@
+{
+  "compileOnSave": true,
+
+  "compilerOptions": {
+    "module": "commonjs",
+    "allowUnreachableCode": false,
+    "alwaysStrict": true,
+    "strictNullChecks": true,
+    "allowSyntheticDefaultImports": true,
+    "noImplicitAny": true,
+    "outDir": "lib",
+    "lib": ["es2015", "es6"],
+    "moduleResolution": "node"
+  },
+  "exclude": ["node_modules"]
+}

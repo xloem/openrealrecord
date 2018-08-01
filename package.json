@@ -14,15 +14,23 @@
     "hyperdiscovery": "^7.1.0",
     "minimist": "^1.2.0",
     "protocol-buffers-encodings": "^1.1.0",
-    "random-access-memory": "^3.0.0"
+    "random-access-memory": "^3.0.0",
+    "sodium-universal": "^2.0.0",
+    "buffer-alloc-unsafe": "^1.1.0",
+    "bulk-write-stream": "^1.1.4",
+    "thunky": "^1.0.2"
   },
   "devDependencies": {
-    "protocol-buffers": "^4.0.4",
+    "@types/node": "^10.5.2",
+    "@types/tape": "^4.2.32",
     "standard": "^11.0.0",
-    "tape": "^4.9.0"
+    "tape": "^4.9.1",
+    "typescript": "^2.9.2",
+    "protocol-buffers": "^4.0.4",
+    "tslint": "^5.11.0"
   },
   "scripts": {
-    "test": "standard && tape test/*.js",
+    "test": "tslint -c tslint.json 'src/**/*.ts' && tsc && tape test/*.js && tape lib/test/*.js",
     "protobuf": "protocol-buffers schema.proto -o lib/messages.js"
   },
   "repository": "https://github.com/xloem/hyperstream.git",
