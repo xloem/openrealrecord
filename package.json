@@ -24,6 +24,7 @@
     "tape": "^4.9.0"
   },
   "scripts": {
+    "lint": "standard",
     "test-unit": "tape test/unit/**/*.js",
     "test-int": "tape test/int/**/*.js",
     "test-full": "npm-run-all test-unit test-int",
