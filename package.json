@@ -28,7 +28,7 @@
     "test-unit": "tape test/unit/**/*.js",
     "test-int": "tape test/int/**/*.js",
     "test-full": "npm-run-all test-unit test-int",
-    "test": "standard && tape test/int/**/*.js",
+    "test": "npm-run-all lint test-full",
     "protobuf": "protocol-buffers schema.proto -o lib/messages.js"
   },
   "repository": "https://github.com/xloem/hyperstream.git",
