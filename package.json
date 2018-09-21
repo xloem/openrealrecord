@@ -26,6 +26,7 @@
   },
   "scripts": {
     "lint": "standard",
+    "test-hoc": "cross-env NODE_PATH=lib:test tape",
     "test-unit": "cross-env NODE_PATH=lib:test tape test/unit/**/*.js",
     "test-int": "cross-env NODE_PATH=lib:test tape test/int/**/*.js",
     "test-full": "npm-run-all test-unit test-int",
