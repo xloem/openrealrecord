@@ -1,4 +1,4 @@
-var hyperstream = require('../')
+var hyperstream = require('../..')
 var ram = require('random-access-memory')
 var tape = require('tape')
 

@@ -24,7 +24,7 @@
   },
   "scripts": {
     "test-int": "tape test/int/**/*.js",
-    "test": "standard && tape test/*.js",
+    "test": "standard && tape test/int/**/*.js",
     "protobuf": "protocol-buffers schema.proto -o lib/messages.js"
   },
   "repository": "https://github.com/xloem/hyperstream.git",
