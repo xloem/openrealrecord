@@ -25,8 +25,8 @@
   },
   "scripts": {
     "lint": "standard",
-    "test-unit": "tape test/unit/**/*.js",
-    "test-int": "tape test/int/**/*.js",
+    "test-unit": "NODE_PATH=lib:test tape test/unit/**/*.js",
+    "test-int": "NODE_PATH=lib:test tape test/int/**/*.js",
     "test-full": "npm-run-all test-unit test-int",
     "test": "npm-run-all lint test-full",
     "protobuf": "protocol-buffers schema.proto -o lib/messages.js"
