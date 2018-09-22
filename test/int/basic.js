@@ -1,73 +1,73 @@
-var hyperstream = require('../..')
-var ram = require('random-access-memory')
-var tape = require('tape')
+const test = require('ava')
+const hyperstream = require('../..')
+const ram = require('random-access-memory')
 
-var hs = hyperstream(ram)
+const hs = hyperstream(ram)
 
-tape('ready', function (t) {
-  hs.ready(function (err) {
-    t.error(err, 'no error')
+test.serial.cb('ready', t => {
+  hs.ready(err => {
+    t.falsy(err, 'no error')
     t.end()
   })
 })
 
-tape('getStream localStream', function (t) {
-  t.same(hs.getStream(hs.localStream.id), hs.localStream)
+test.serial.cb('getStream localStream', t => {
+  t.is(hs.getStream(hs.localStream.id), hs.localStream)
   t.end()
 })
 
-tape('write', function (t) {
-  hs.write('hello ', function (err) {
-    t.error(err, 'no error')
-    hs.write('world!', function (err) {
-      t.error(err, 'no error')
+test.serial.cb('write', t => {
+  hs.write('hello ', err => {
+    t.falsy(err, 'no error')
+    hs.write('world!', err => {
+      t.falsy(err, 'no error')
       t.end()
     })
   })
 })
 
-tape('local read', function (t) {
-  hs.localStream.read(1, 10, {}, function (err, data) {
-    t.error(err, 'no error')
-    t.same(data.toString(), 'ello world')
+test.serial.cb('local read', t => {
+  hs.localStream.read(1, 10, {}, (err, data) => {
+    t.falsy(err, 'no error')
+    t.is(data.toString(), 'ello world')
     t.end()
   })
 })
 
-tape('local checkpoints', function (t) {
+test.serial.cb('local checkpoints', t => {
   var cp1, cp2
   var it = hs.localStream.checkpoints()
-  it.next(function (err, checkpoint) {
-    t.error(err, 'no error')
+  it.next((err, checkpoint) => {
+    t.falsy(err, 'no error')
     cp1 = checkpoint
-    t.same(checkpoint.length, 1)
-    t.same(checkpoint.byteLength, 6)
-    it.next(function (err, checkpoint) {
-      t.error(err, 'no error')
+    t.is(checkpoint.length, 1)
+    t.is(checkpoint.byteLength, 6)
+    it.next((err, checkpoint) => {
+      t.falsy(err, 'no error')
       cp2 = checkpoint
-      t.same(checkpoint.length, 2)
-      t.same(checkpoint.byteLength, 12)
-      it.next(function (err, checkpoint) {
-        t.error(err, 'no error')
-        t.same(checkpoint, null)
+      t.is(checkpoint.length, 2)
+      t.is(checkpoint.byteLength, 12)
+      it.next((err, checkpoint) => {
+        t.falsy(err, 'no error')
+        t.is(checkpoint, null)
         verifies()
       })
     })
   })
   function verifies () {
-    hs.localStream.verify(cp1, function (err, success) {
-      t.error(err, 'no error')
-      t.same(success, true)
-      hs.localStream.verify(cp2, function (err, success) {
-        t.error(err, 'no error')
-        t.same(success, true)
+    hs.localStream.verify(cp1, (err, success) => {
+      t.falsy(err, 'no error')
+      t.is(success, true)
+      hs.localStream.verify(cp2, (err, success) => {
+        t.falsy(err, 'no error')
+        t.is(success, true)
         t.end()
       })
     })
   }
 })
 
-tape('local listen', function (t) {
+test.serial.cb('local listen', t => {
   var length = hs.localStream.feed.length
   var byteLength = hs.localStream.feed.byteLength
   var data = [
@@ -79,15 +79,17 @@ tape('local listen', function (t) {
 
   t.plan(data.length * 5)
 
-  hs.localStream.on('error', function (err) { t.fail(err) })
+  hs.localStream.on('error', err => { t.fail(err) })
   hs.localStream.on('checkpoint', oncheckpoint)
   hs.localStream.listen()
+
+  let checked = 0
 
   writenext()
 
   function writenext () {
-    hs.write(data[dataIndex], function (err) {
-      t.error(err)
+    hs.write(data[dataIndex], err => {
+      t.falsy(err)
     })
   }
 
@@ -98,11 +100,13 @@ tape('local listen', function (t) {
 
     if (dataIndex < data.length) writenext()
 
-    t.same(checkpoint.length, length)
-    t.same(checkpoint.byteLength, byteLength)
-    hs.localStream.verify(checkpoint, function (err, success) {
-      t.error(err)
-      t.ok(success)
+    t.is(checkpoint.length, length)
+    t.is(checkpoint.byteLength, byteLength)
+    hs.localStream.verify(checkpoint, (err, success) => {
+      t.falsy(err)
+      t.truthy(success)
+      checked++
+      if (checked === data.length) t.end()
     })
   }
 })
