@@ -30,7 +30,7 @@
     "test-hoc": "cross-env NODE_PATH=lib:test ava",
     "test-unit": "cross-env NODE_PATH=lib:test ava test/unit",
     "test-int": "cross-env NODE_PATH=lib:test ava test/int",
-    "test-full": "npm-run-all test-unit test-int",
+    "test-full": "npm-run-all test-int",
     "test": "npm-run-all lint test-full",
     "protobuf": "protocol-buffers schema.proto -o lib/messages.js"
   },
