@@ -17,12 +17,21 @@
     "random-access-memory": "^3.0.0"
   },
   "devDependencies": {
+    "ava": "^1.0.0-beta.8",
+    "cross-env": "^5.2.0",
+    "mock-require": "^3.0.2",
+    "npm-run-all": "^4.1.3",
     "protocol-buffers": "^4.0.4",
-    "standard": "^11.0.0",
-    "tape": "^4.9.0"
+    "sinon": "^6.3.4",
+    "standard": "^11.0.0"
   },
   "scripts": {
-    "test": "standard && tape test/*.js",
+    "lint": "standard",
+    "test-hoc": "cross-env NODE_PATH=lib:test ava",
+    "test-unit": "cross-env NODE_PATH=lib:test ava test/unit",
+    "test-int": "cross-env NODE_PATH=lib:test ava test/int",
+    "test-full": "npm-run-all test-int",
+    "test": "npm-run-all lint test-full",
     "protobuf": "protocol-buffers schema.proto -o lib/messages.js"
   },
   "repository": "https://github.com/xloem/hyperstream.git",
