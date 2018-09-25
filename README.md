@@ -17,3 +17,9 @@ The design of openrealrecord should be suitable for recording and sharing inform
 - censorship-resistant: announcing to blockchains allows global connectivity.  a provable tree of hashes means that it is incredibly difficult to alter data after the fact.
 
 - unlimited size: hypercore streams break their data into trees, where the entirety of the data can be shown correct while only transmitting the portion of it of interest.  The design of openrealrecord allows for stream trees to reference other stream trees as children, providing for unlimited expandability as the metadata structures of a single tree become stretched to their limits.  Updates from each child tree can be hashed into the parent tree as a single stream update.
+
+Known vulnerabilities:
+
+- If a device or its private key is compromised, its entries in the record may not match what really happened after the point of compromise.  Advise to record avenues of attack, and to use a second device to continuously verify recordings of first in some way to mitigate this. (TODO: automate some approach to this redundant verification once there are stream modules that are specific enough for this to be appropriate)
+
+- The code and design has not been reviewed by an expert in security or cryptography.
