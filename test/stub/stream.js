@@ -1,9 +1,11 @@
+const EventEmitter = require('events')
 const sinon = require('sinon')
 
-class StubStream {
-  constructor () {
+class StubStream extends EventEmitter {
+  constructor (...args) {
+    super(...args)
     this.write = sinon.stub()
-    Object.freeze(this)
+    this.writeCheckPub = sinon.stub()
   }
 }
 
