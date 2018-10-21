@@ -1,65 +1,70 @@
-'use strict'
+import { EventEmitter } from 'events';
+import * as HyperDB from 'hyperdb';
+import * as thunky from 'thunky';
+import Stream from './stream';
+import { feedToStreamID } from './util';
 
-import * as hyperdb from 'hyperdb'
-import * as thunky from 'thunky'
-const events = require('events')
-const inherits = require('inherits')
-const Stream = require('./stream')
-import {feedToStreamID} from './util'
+export default class HyperStream extends EventEmitter {
+  public db: HyperDB;
+  public localStream?: Stream;
+  // tslint:disable-next-line:variable-name
+  public _streamCache: {[name: string]: Stream};
+  public ready: Function;
+  public id: string;
 
-export const HyperStream = (storage, key, opts): void => {
-  if (!(this instanceof HyperStream)) return new HyperStream(storage, key, opts)
-  events.EventEmitter.call(this)
+  constructor(storage: string | Function, key?: Buffer | null, opts: HyperDB.Options = {}) {
+    super();
+    if (!(this instanceof HyperStream)) {
+      return new HyperStream(storage, key, opts);
+    }
 
-  if (typeof key === 'object' && !!key && !Buffer.isBuffer(key)) {
-    opts = key
-    key = null
+    if (typeof key === 'object' && !!key && !Buffer.isBuffer(key)) {
+      opts = key;
+      key = null;
+    }
+
+    const options: HyperDB.Options = {contentFeed: true, ...opts};
+    this.db = new HyperDB(storage, key, options);
+    this.ready = thunky(this._ready);
+
+    this._streamCache = {};
+
+    this.ready();
   }
 
-  if (!opts) opts = {}
-  if (!opts.contentFeed) opts.contentFeed = true
+  public getStreams = (): string[] => this.db.feeds.map(feedToStreamID);
 
-  this.db = hyperdb(storage, key, opts)
-  this.localStream = null
-  this.ready = thunky(this._ready.bind(this))
+  public getStream = (id: string, cb: Function): Stream => {
+    let stream: Stream | undefined = this._streamCache[id];
+    if (!stream) {
+      stream = new Stream(this.db, id, cb);
+      this._streamCache[id] = stream;
+    }
+    process.nextTick(cb, null, stream);
 
-  this._streamCache = {}
-
-  this.ready()
-}
-
-inherits(HyperStream, events.EventEmitter)
-
-HyperStream.prototype.getStreams = () => {
-  return this.db.feeds.map(feed => feedToStreamID(feed))
-}
-
-HyperStream.prototype.getStream = (id, cb) => {
-  let stream = this._streamCache[id]
-  if (!stream) {
-    stream = new Stream(this.db, id, cb)
-    this._streamCache[id] = stream 
-  } else if (cb) {
-    process.nextTick(cb, null, stream)
+    return stream;
   }
-  return stream
-}
 
-HyperStream.prototype.write = (data, cb) => {
-  if (!this.localStream) return cb(new Error('not ready'))
-  this.localStream.write(data, cb)
-}
+  public write = (data: string, cb: Function): void => {
+    if (!this.localStream) { return cb(new Error('not ready')); }
+    this.localStream.write(data, cb);
+  }
 
-HyperStream.prototype.createWriteStream = () => {
-  if (!this.localStream) throw new Error('not ready')
-  return this.localStream.createWriteStream()
-}
+  public createWriteStream = (): any => {
+    if (!this.localStream) {
+      throw new Error('not ready');
+    }
 
-HyperStream.prototype._ready = cb => {
-  this.db.ready(err => {
-    if (err) return cb(err)
+    return this.localStream.createWriteStream();
+  }
 
-    this.id = feedToStreamID(this.db.local)
-    this.localStream = this.getStream(this.id, cb)
-  })
+  // tslint:disable-next-line:variable-name
+  public _ready = (cb: Function): any => {
+    this.db.ready((err?: Error) => {
+      if (err) { return cb(err); }
+
+      this.id = feedToStreamID(this.db.local);
+      this.localStream = this.getStream(this.id, cb);
+    });
+  }
 }

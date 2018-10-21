@@ -43,6 +43,16 @@ export class Checkpoint implements ICheckpoint {
      * @returns Writer
      */
     public static encode(message: ICheckpoint, writer?: $protobuf.Writer): $protobuf.Writer;
+
+    /**
+     * Decodes a Checkpoint message from the specified reader or buffer.
+     * @param reader Reader or buffer to decode from
+     * @param [length] Message length if known beforehand
+     * @returns Checkpoint
+     * @throws {Error} If the payload is not a reader or valid buffer
+     * @throws {$protobuf.util.ProtocolError} If required fields are missing
+     */
+    public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): Checkpoint;
 }
 
 /** Properties of a Timestamp. */
@@ -71,6 +81,16 @@ export class Timestamp implements ITimestamp {
      * @returns Writer
      */
     public static encode(message: ITimestamp, writer?: $protobuf.Writer): $protobuf.Writer;
+
+    /**
+     * Decodes a Timestamp message from the specified reader or buffer.
+     * @param reader Reader or buffer to decode from
+     * @param [length] Message length if known beforehand
+     * @returns Timestamp
+     * @throws {Error} If the payload is not a reader or valid buffer
+     * @throws {$protobuf.util.ProtocolError} If required fields are missing
+     */
+    public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): Timestamp;
 }
 
 /** Properties of a Database. */
@@ -117,6 +137,16 @@ export class Database implements IDatabase {
      * @returns Writer
      */
     public static encode(message: IDatabase, writer?: $protobuf.Writer): $protobuf.Writer;
+
+    /**
+     * Decodes a Database message from the specified reader or buffer.
+     * @param reader Reader or buffer to decode from
+     * @param [length] Message length if known beforehand
+     * @returns Database
+     * @throws {Error} If the payload is not a reader or valid buffer
+     * @throws {$protobuf.util.ProtocolError} If required fields are missing
+     */
+    public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): Database;
 }
 
 /** Properties of an InflatedDatabase. */
@@ -175,4 +205,14 @@ export class InflatedDatabase implements IInflatedDatabase {
      * @returns Writer
      */
     public static encode(message: IInflatedDatabase, writer?: $protobuf.Writer): $protobuf.Writer;
+
+    /**
+     * Decodes an InflatedDatabase message from the specified reader or buffer.
+     * @param reader Reader or buffer to decode from
+     * @param [length] Message length if known beforehand
+     * @returns InflatedDatabase
+     * @throws {Error} If the payload is not a reader or valid buffer
+     * @throws {$protobuf.util.ProtocolError} If required fields are missing
+     */
+    public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): InflatedDatabase;
 }

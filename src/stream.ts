@@ -1,386 +1,359 @@
-'use strict'
+import * as bulk from 'bulk-write-stream';
+import { EventEmitter } from 'events';
+import * as HyperDB from 'hyperdb';
+import * as hyperdbmessages from 'hyperdb/lib/messages';
+import * as hyperdbput from 'hyperdb/lib/put';
+import * as messages from './message';
+import { feedToStreamID, hashRoots, keyToFeeds, streamIDToFeedKey } from './util';
 
-const bulk = require('bulk-write-stream')
-const events = require('events')
-const inherits = require('inherits')
-const hyperdbput = require('hyperdb/lib/put')
-const hyperdbmessages = require('hyperdb/lib/messages')
-const messages = require('./messages')
-const util = require('./util')
+export default class Stream extends EventEmitter {
+  public db: HyperDB;
+  public id: string;
+  public path: string;
+  public feed: HyperDB.Feed | null;
+  public metadata: HyperDB.Metadata | null;
+  public _dbfeed: any;
+  public _checkpointwatcher: any;
 
-module.exports = Stream
+  constructor(db: HyperDB, id: string, cb: Function) {
+    super();
+    this.db = db;
+    this.id = id;
+    this.path = `streams/${id}`;
+    this.feed = null;
+    this._dbfeed = null;
+    this.metadata = null;
 
-function Stream (db, id, cb) {
-  events.EventEmitter.call(this)
+    if (!this.db.opened) { throw new Error('not ready'); }
+    const feedKey: Buffer = streamIDToFeedKey(id);
 
-  this.db = db
-  this.id = id
-  this.path = 'streams/' + this.id
-  this.feed = null
-  this.metadata = null
-  this._dbfeed = null
+    const onfeeds: Function = (err: Error | null, dbfeed: any, contentfeed: HyperDB.Feed): void => {
+      if (err) { return cb(err); }
+      this._dbfeed = dbfeed;
+      this.feed = contentfeed;
+      cb(null, this);
+    };
 
-  if (!this.db.opened) throw new Error('not ready')
+    this.getMetadata((err: Error | null, metadata: HyperDB.Metadata | null) => {
+      if (err) { return cb(err); }
+      this.metadata = metadata;
 
-  const feedKey = util.streamIDToFeedKey(id)
-
-  this.getMetadata((err, metadata) => {
-    if (err) return cb(err)
-    this.metadata = metadata
-
-    // done here because the feeds may be inadvertently loaded in the request for metadata
-    util.keyToFeeds(this.db, feedKey, onfeeds)
-  })
-
-  const onfeeds = (err, dbfeed, contentfeed) => {
-    if (err) return cb(err)
-    this._dbfeed = dbfeed
-    this.feed = contentfeed
-    cb(null, this)
-  }
-}
-
-inherits(Stream, events.EventEmitter)
-
-Stream.prototype.getMetadata = function (cb) {
-  const self = this
-
-  this.db.get(this.path + '/stream.json', onstreamjson)
-
-  // TODO: since hyperdb doesn't have access restrictions yet, ignore updates to this file by others
-  // (can catch in fsck too)
-  function onstreamjson (err, nodes) {
-    if (err) return cb(err)
-
-    if (nodes.length > 1) return cb(new Error('metadata conflict'))
-
-    if (!nodes[0]) {
-      // TODO: set owner to the feed that authorized this feed, or at least provide a way to easily do this
-      cb(null, {
-        name: self.id,
-        owner: self.id,
-        media: 'application/octet-stream',
-        source: 'unknown'
-      })
-    } else {
-      cb(null, JSON.parse(nodes[0].value.toString()))
-    }
-  }
-}
-
-Stream.prototype.validateMetadata = function (metadata, cb) {
-  if (!metadata.name || metadata.name === this.id) {
-    return cb(new Error('stream has no name'))
+      // done here because the feeds may be inadvertently loaded in the request for metadata
+      keyToFeeds(this.db, feedKey, onfeeds);
+    });
   }
 
-  if (this.metadata.media === 'application/x.hyper-protobuf' && metadata.media !== this.metadata.media && this.feed.length > 0) {
-    return cb(new Error('cannot change special media type'))
-  }
+  public getMetadata = (cb: (error: Error | null, metadata: HyperDB.Metadata | null) => void): void => {
+    // TODO: since hyperdb doesn't have access restrictions yet, ignore updates to this file by others
+    // (can catch in fsck too)
+    const onstreamjson: Function = (err: Error | null, nodes: any): void => {
+      if (err) { return cb(err, null); }
 
-  util.keyToFeeds(this.db, util.streamIDToFeedKey(metadata.owner), function (err) {
-    if (err) return cb(new Error('can\'t find owner feed: ' + err.message))
+      if (nodes.length > 1) { return cb(new Error('metadata conflict'), null); }
 
-    cb(null)
-  })
-}
-
-Stream.prototype.setMetadata = function (metadata, cb) {
-  const self = this
-  this.validateMetadata(metadata, function (err) {
-    if (err) return cb(err)
-    self.db.put(self.path + '/stream.json', JSON.stringify(metadata), function (err, node) {
-      if (err) return cb(err)
-      self.metadata = JSON.parse(node.value.toString())
-      cb(null, self.metadata)
-    })
-  })
-}
-
-Stream.prototype.listen = function () {
-  if (this._checkpointwatcher) throw new Error('already listening')
-
-  var self = this
-
-  var seqs = null
-
-  self.db.get(self.path + '/checkpoint.protobuf', initialize)
-  self._checkpointwatcher = this.db.watch(this.path + '/checkpoint.protobuf', onwatchcheckpoint)
-
-  function initialize (err, checkpoints) {
-    seqs = []
-
-    if (err) return emit(err)
-
-    for (var i = 0; i < checkpoints.length; ++i) {
-      var cp = checkpoints[i]
-      seqs[cp.feed] = cp.seq
-    }
-  }
-
-  function onwatchcheckpoint () {
-    self.db.get(self.path + '/checkpoint.protobuf', oncheckpoint)
-  }
-
-  function oncheckpoint (err, checkpoints) {
-    if (err) return emit(err)
-    if (checkpoints === []) emit(null, null)
-
-    for (var i = 0; i < checkpoints.length; ++i) {
-      var cp = checkpoints[i]
-      var feed = cp.feed
-      var last = seqs[feed]
-      var cur = cp.seq
-      if (!last || last !== cur) {
-        seqs[feed] = cur
-        self._decodeCheckpoint(cp, emit)
-      }
-    }
-  }
-
-  function emit (err, checkpoint) {
-    if (err) return self.emit('error', err)
-    self.emit('checkpoint', checkpoint)
-  }
-}
-
-Stream.prototype.listening = function () {
-  return !!this._checkpointwatcher
-}
-
-Stream.prototype.ignore = function () {
-  if (!this._checkpointwatcher) throw new Error('not listening')
-  this._checkpointwatcher.destroy()
-  this._checkpointwatcher = null
-}
-
-Stream.prototype.checkpoints = function (opts) {
-  var self = this
-  var it = this.db.history(opts)
-  var _next = it._next
-  it._next = next
-  function next (cb) {
-    _next.call(it, function (err, val) {
-      if (err) return cb(err)
-      if (!val) return cb(null, null)
-      if (val.key !== self.path + '/checkpoint.protobuf') return next.call(it, cb)
-      self._decodeCheckpoint(val, cb)
-    })
-  }
-  return it
-}
-
-Stream.prototype.verify = function (checkpoint, cb) {
-  if (checkpoint.author !== this.id) return cb(new Error('incorrect author'))
-  if (Buffer.compare(checkpoint._feeds[0], this.feed.key)) return cb(new Error('incorrect feed'))
-  var self = this
-  var feeds = [this.feed]
-  var feedsGotten = 0
-
-  // seek to spot to make sure root hashes are loaded
-  this.feed.seek(checkpoint.byteLength - 1, { hash: true }, seeked)
-
-  for (var i = 1; i < checkpoint._feeds.length; ++i) {
-    addFeed(i)
-  }
-
-  function seeked (err) {
-    if (err) return cb(err)
-    ++feedsGotten
-    if (feedsGotten === checkpoint._feeds.length) doHash()
-  }
-
-  function addFeed (index) {
-    util.keyToFeeds(self.db, checkpoint._feeds[i], function (err, feed) {
-      if (err) return cb(err)
-      feeds[index] = feed
-      ++feedsGotten
-      if (feedsGotten === checkpoint._feeds.length) doHash()
-    })
-  }
-
-  function doHash () {
-    util.hashRoots(feeds, checkpoint._lengths, function (err, hash, byteLengths) {
-      if (err) return cb(err)
-      if (byteLengths[0] !== checkpoint.byteLength) return cb(new Error('incorrect byteLength'))
-      if (Buffer.compare(checkpoint.rootsHash, hash)) return cb(new Error('hash failure'))
-      cb(null, true)
-    })
-  }
-}
-
-Stream.prototype.findValidCheckpoint = function (opts, cb, invalidcb) {
-  var self = this
-  var checkpoints = this.checkpoints(opts)
-
-  checkpoints.next(seekValid)
-
-  function seekValid (err, checkpoint) {
-    if (err) {
-      if (invalidcb) invalidcb(err)
-      return checkpoints.next(seekValid)
-    }
-
-    if (checkpoint === null) return cb()
-
-    self.verify(checkpoint, function (err) {
-      if (err) {
-        if (invalidcb) invalidcb(err, checkpoint)
-        return checkpoints.next(seekValid)
+      if (!nodes[0]) {
+        // TODO: set owner to the feed that authorized this feed, or at least provide a way to easily do this
+        cb(null, {
+          name: this.id,
+          owner: this.id,
+          media: 'application/octet-stream',
+          source: 'unknown'
+        });
       } else {
-        return cb(null, checkpoint)
+        cb(null, JSON.parse(nodes[0].value.toString()));
       }
-    })
+    };
+    this.db.get(`${this.path}'/stream.json`, onstreamjson);
   }
-}
 
-Stream.prototype.createWriteStream = function () {
-  var self = this
+  public validateMetadata = (metadata: HyperDB.Metadata, cb: Function): void  => {
+    if (!metadata.name || metadata.name === this.id) {
+      return cb(new Error('stream has no name'));
+    }
 
-  return bulk.obj(write)
+    if (this.metadata!.media === 'application/x.hyper-protobuf' && metadata.media !== this.metadata!.media && this.feed!.length > 0) {
+      return cb(new Error('cannot change special media type'));
+    }
 
-  function write (batch, cb) {
-    self.feed.append(batch, function (err) {
+    keyToFeeds(this.db, streamIDToFeedKey(metadata.owner), (err: Error | null) => {
+      if (err) { return cb(new Error(`can't find owner feed: ${err.message}`)); }
+      cb(null);
+    });
+  }
+
+  public setMetadata = (metadata: HyperDB.Metadata, cb: Function): void => {
+    this.validateMetadata(metadata, (err: Error | null) => {
+      if (err) { return cb(err); }
+      this.db.put(`${this.path}/stream.json`, JSON.stringify(metadata), (error: Error | null, node: any) => {
+        if (error) { return cb(error); }
+        this.metadata = JSON.parse(node.value.toString());
+        cb(null, this.metadata);
+      });
+    });
+  }
+
+  public listen = (): void => {
+    if (this._checkpointwatcher) { throw new Error('already listening'); }
+
+    const seqs: any[] = [];
+
+    const emit: Function = (err: (Error | null), checkpoint?: HyperDB.Checkpoint): boolean | undefined => {
+      if (err) { return this.emit('error', err); }
+      this.emit('checkpoint', checkpoint);
+    };
+
+    const initialize: Function = (err: (Error | null), checkpoints: any[]): boolean | undefined => {
+      if (err) { return emit(err); }
+      checkpoints.forEach((cp: any) => seqs[cp.feed] = cp.seq);
+    };
+
+    this.db.get(`${this.path}/checkpoint.protobuf`, initialize);
+
+    const onCheckPoint: Function = (err: (Error | null), checkpoints: HyperDB.Checkpoint[]): boolean | undefined => {
+      if (err) { return emit(err); }
+      if (checkpoints.length === 0) { emit(null, null); }
+
+      checkpoints.forEach((cp: HyperDB.Checkpoint) => {
+        const feed: number = cp.feed;
+        const last: any = seqs[feed];
+        const cur: any = cp.seq;
+        if (!last || last !== cur) {
+          seqs[feed] = cur;
+          this._decodeCheckpoint(cp, emit);
+        }
+      });
+    };
+
+    const onWatchCheckpoint: Function = (): any => this.db.get(`${this.path}/checkpoint.protobuf`, onCheckPoint);
+    this._checkpointwatcher = this.db.watch(`${this.path}/checkpoint.protobuf`, onWatchCheckpoint);
+  }
+
+  public listening = (): boolean => !!this._checkpointwatcher;
+
+  public ignore = (): void => {
+    if (!this._checkpointwatcher) { throw new Error('not listening'); }
+    this._checkpointwatcher.destroy();
+    this._checkpointwatcher = null;
+  }
+
+  public checkpoints = (opts: HyperDB.Options): any => {
+    const it: any = this.db.history(opts);
+    const _next: any = it._next;
+    const next: Function = (cb: Function): void => {
+      _next.call(it, (err: (Error | null), val: any) => {
+        if (err) { return cb(err); }
+        if (!val) { return cb(null, null); }
+        if (val.key !== `${this.path}/checkpoint.protobuf`) { return next.call(it, cb); }
+        this._decodeCheckpoint(val, cb);
+      });
+    };
+
+    it._next = next;
+
+    return it;
+  }
+
+  public verify = (checkpoint: any, cb: Function): void => {
+    if (checkpoint.author !== this.id) { return cb(new Error('incorrect author')); }
+    if (Buffer.compare(checkpoint._feeds[0], this.feed!.key)) { return cb(new Error('incorrect feed')); }
+    const feeds: HyperDB.Feed[] = [this.feed!];
+    let feedsGotten: number = 0;
+
+    const doHash: Function = (): void => {
+      hashRoots(feeds, checkpoint._lengths, (err: (Error | null), hash: any, byteLengths: any) => {
+        if (err) { return cb(err); }
+        if (byteLengths[0] !== checkpoint.byteLength) { return cb(new Error('incorrect byteLength')); }
+        if (Buffer.compare(checkpoint.rootsHash, hash)) { return cb(new Error('hash failure')); }
+        cb(null, true);
+      });
+    };
+
+    const seeked: Function = (err: (Error | null)): void => {
+      if (err) { return cb(err); }
+      ++feedsGotten;
+      if (feedsGotten === checkpoint._feeds.length) { doHash(); }
+    };
+
+    // seek to spot to make sure root hashes are loaded
+    this.feed!.seek(checkpoint.byteLength - 1, { hash: true }, seeked);
+
+    const addFeed: Function = (index: number): void => {
+      keyToFeeds(this.db, checkpoint._feeds[index], (err: (Error | null), feed: HyperDB.Feed) => {
+        if (err) { return cb(err); }
+        feeds[index] = feed;
+        ++feedsGotten;
+        if (feedsGotten === checkpoint._feeds.length) { doHash(); }
+      });
+    };
+    for (let i: number = 1; i < checkpoint._feeds.length; ++i) {
+      addFeed(i);
+    }
+  }
+
+  public findValidCheckpoint = (opts: HyperDB.Options, cb: Function, invalidCb?: Function): any => {
+    const checkpoints: any = this.checkpoints(opts);
+    const seekValid: Function = (err: (Error | null), checkpoint: any): any => {
+      if (err) {
+        if (invalidCb) { invalidCb(err); }
+
+        return checkpoints.next(seekValid);
+      }
+
+      if (checkpoint === null) { return cb(); }
+
+      this.verify(checkpoint, (error: (Error | null)): any => {
+        if (error) {
+          if (invalidCb) { invalidCb(error, checkpoint); }
+
+          return checkpoints.next(seekValid);
+        } else {
+          return cb(null, checkpoint);
+        }
+      });
+    };
+
+    checkpoints.next(seekValid);
+  }
+
+  public createWriteStream = (): any => {
+    const write: Function = (batch: any, cb: Function): void => {
+      this.feed!.append(batch, (err: (Error | null)) => {
+        // nextTick is used because if an error is thrown here, the hypercore batcher will crash
+        if (err) { return process.nextTick(cb, err); }
+        this._writeCheckpoint(cb);
+      });
+    };
+
+    return bulk.obj(write);
+  }
+
+  public write = (data: any, cb: Function): void => {
+    this.feed!.append(data, (err: (Error | null)) => {
       // nextTick is used because if an error is thrown here, the hypercore batcher will crash
-      if (err) return process.nextTick(cb, err)
-      self._writeCheckpoint(cb)
-    })
-  }
-}
-
-Stream.prototype.write = function (data, cb) {
-  var self = this
-
-  this.feed.append(data, function (err) {
-    // nextTick is used because if an error is thrown here, the hypercore batcher will crash
-    if (err) return process.nextTick(cb, err)
-
-    self._writeCheckpoint(cb)
-  })
-}
-
-Stream.prototype.read = function (start, length, opts, cb) {
-  // TODO: find a checkpoint that covers this data and verify it
-
-  var self = this
-
-  if (!start) start = 0
-  if (!length) length = this.feed.byteLength - start
-  if (!opts) opts = {}
-  opts.valueEncoding = 'binary'
-
-  var startIndex = null
-  var startOffset = null
-  var tailIndex = null
-  var blocks = []
-  var totalBlocks = null
-  var completedBlocks = 0
-
-  this.feed.seek(start, {}, seekStart)
-  this.feed.seek(start + length - 1, {}, seekTail)
-
-  function seekStart (err, index, offset) {
-    if (err) return cb(err)
-    startIndex = index
-    startOffset = offset
-    if (tailIndex != null) seekDone()
+      if (err) { return process.nextTick(cb, err); }
+      this._writeCheckpoint(cb);
+    });
   }
 
-  function seekTail (err, index, offset) {
-    if (err) return cb(err)
-    tailIndex = index
-    if (startIndex != null) seekDone()
+  public read = (start: number, length: number, opts: HyperDB.Options, cb: Function): void => {
+    // TODO: find a checkpoint that covers this data and verify it
+
+    if (!start) { start = 0; }
+    if (!length) { length = this.feed!.byteLength - start; }
+    if (!opts) { opts = {}; }
+    opts.valueEncoding = 'binary';
+
+    let startIndex: number = -1;
+    let startOffset: number;
+    let tailIndex: number = -1;
+    const blocks: any[] = [];
+    let totalBlocks: number;
+    let completedBlocks: number = 0;
+
+    const finish: Function = (): void => {
+      blocks[0] = blocks[0].slice(startOffset);
+      cb(null, Buffer.concat(blocks, length));
+    };
+
+    const getOne: Function = (index: number): void => {
+      this.feed!.get(index, opts, (err: Error, data: any) => {
+        if (err) { return cb(err); }
+        blocks[index - startIndex] = data;
+        ++completedBlocks;
+        if (totalBlocks === completedBlocks) { finish(); }
+      });
+    };
+
+    const seekDone: Function = (): void => {
+      totalBlocks = tailIndex - startIndex + 1;
+      for (let i: number = startIndex; i <= tailIndex; ++i) {
+        getOne(i);
+      }
+    };
+
+    const seekStart: Function = (err: Error, index: number, offset: number): void => {
+      if (err) { return cb(err); }
+      startIndex = index;
+      startOffset = offset;
+      if (tailIndex < 0) { seekDone(); }
+    };
+    this.feed!.seek(start, {}, seekStart);
+
+    const seekTail: Function = (err: Error, index: number, offset: number): void => {
+      if (err) { return cb(err); }
+      tailIndex = index;
+      if (startIndex < 0) { seekDone(); }
+    };
+    this.feed!.seek(start + length - 1, {}, seekTail);
   }
 
-  function seekDone () {
-    totalBlocks = 1 + tailIndex - startIndex
-    for (var i = startIndex; i <= tailIndex; ++i) {
-      getOne(i)
+  public _writeCheckpoint = (cb: Function): void => {
+    // wrapping code taken from HyperDB.prototype.put to ensure our sequence numbers are the same as in the put
+    // this is needed because put only lets us know what vector clock it used after it has already submitted the data
+    // TODO: submit an issue/pr to hyperdb mentioning this use case and brainstorm a solution to propose
+    this.db._lock((release: Function) => {
+      const unlock: (err: Error) => void = (err: Error): void => {
+        release(cb, err);
+      };
+
+      this.db.heads((err: (Error | null), heads: any) => {
+        if (err) { return unlock(err); }
+
+        const clock: any = this.db._clock();
+
+        // taken from Writer.prototype.append which is called after the put node is constructed and adjusts local clock
+        const hdbid: number = this.db._byKey.get(this._dbfeed.key.toString('hex'))!._id;
+        if (!clock[hdbid]) { clock[hdbid] = this._dbfeed.length; }
+
+        const checkpoint: { rootsHash: null; timestamp: number; length: number; byteLength: number } = {
+          rootsHash: null,
+          timestamp: Date.now(),
+          length: this.feed!.length,
+          byteLength: this.feed!.byteLength
+        };
+
+        hashRoots([this.feed].concat(this.db.feeds), [checkpoint.length].concat(clock), (error: (Error | null), contentHash: any) => {
+          if (error) { return process.nextTick(cb, error); }
+
+          checkpoint.rootsHash = contentHash;
+          hyperdbput(this.db, clock, heads, `${this.path}/checkpoint.protobuf`, messages.Checkpoint.encode(checkpoint), unlock);
+        });
+      });
+    });
+  }
+
+  public _decodeCheckpoint = (node: any, cb: Function): void => {
+    let checkpoint: any;
+    try {
+      checkpoint = messages.Checkpoint.decode(node.value);
+    } catch (e) {
+      return cb(e);
     }
-  }
+    checkpoint.author = feedToStreamID(this.db.feeds[node.feed]);
 
-  function getOne (index) {
-    self.feed.get(index, opts, function (err, data) {
-      if (err) return cb(err)
-      blocks[index - startIndex] = data
-      ++completedBlocks
-      if (totalBlocks === completedBlocks) finish()
-    })
-  }
+    // TODO: submit an issue / PR to hyperdb to include original raw clocks in node results which are needed for
+    //       for comparing root hashes correctly
+    // this hack converts the returned clock to the original clock
+    const writer: HyperDB.Writer | undefined = this.db._byKey.get(this._dbfeed.key.toString('hex'));
+    if (!writer) { return cb(new Error('object not found')); }
+    node.clock = writer._mapList(node.clock, writer._encodeMap, null);
 
-  function finish () {
-    blocks[0] = blocks[0].slice(startOffset)
-    cb(null, Buffer.concat(blocks, length))
-  }
-}
+    checkpoint._lengths = [checkpoint.length].concat(node.clock);
+    --checkpoint._lengths[<number>node.feed + 1];
 
-Stream.prototype._writeCheckpoint = function (cb) {
-  var self = this
+    // TODO: submit an issue / PR to hyperdb to allow for retrieving feeds at an arbitrary point in history
+    //       which is needed to interpret historic vector clocks.
+    //       For now we use InflatedEntry to decode them by hand.
+    this.db.feeds[node.feed].get(node.inflate, (err: (Error | null), inflatebuf: any) => {
+      if (err) { return cb(err); }
 
-  // wrapping code taken from HyperDB.prototype.put to ensure our sequence numbers are the same as in the put
-  // this is needed because put only lets us know what vector clock it used after it has already submitted the data
-  // TODO: submit an issue/pr to hyperdb mentioning this use case and brainstorm a solution to propose
-  this.db._lock(function (release) {
-    self.db.heads(function (err, heads) {
-      if (err) return unlock(err)
-
-      var clock = self.db._clock()
-
-      // taken from Writer.prototype.append which is called after the put node is constructed and adjusts local clock
-      var hdbid = self.db._byKey.get(self._dbfeed.key.toString('hex'))._id
-      if (!clock[hdbid]) clock[hdbid] = self._dbfeed.length
-
-      var checkpoint = {
-        rootsHash: null,
-        timestamp: Date.now(),
-        length: self.feed.length,
-        byteLength: self.feed.byteLength
+      const inflate: any = hyperdbmessages.InflatedEntry.decode(inflatebuf);
+      checkpoint._feeds = [inflate.contentFeed];
+      for (let i: number = 0; i < inflate.feeds.length; ++i) {
+        checkpoint._feeds[i + 1] = inflate.feeds[i].key;
       }
 
-      util.hashRoots([self.feed].concat(self.db.feeds), [checkpoint.length].concat(clock), function (err, contentHash) {
-        if (err) return process.nextTick(cb, err)
-
-        checkpoint.rootsHash = contentHash
-
-        hyperdbput(self.db, clock, heads, self.path + '/checkpoint.protobuf', messages.Checkpoint.encode(checkpoint), unlock)
-      })
-    })
-
-    function unlock (err, node) {
-      release(cb, err)
-    }
-  })
-}
-
-Stream.prototype._decodeCheckpoint = function (node, cb) {
-  var checkpoint
-  try {
-    checkpoint = messages.Checkpoint.decode(node.value)
-  } catch (e) {
-    return cb(e)
+      cb(null, checkpoint);
+    });
   }
-  checkpoint.author = util.feedToStreamID(this.db.feeds[node.feed])
-
-  // TODO: submit an issue / PR to hyperdb to include original raw clocks in node results which are needed for
-  //       for comparing root hashes correctly
-  // this hack converts the returned clock to the original clock
-  const writer = this.db._byKey.get(this._dbfeed.key.toString('hex'))
-  node.clock = writer._mapList(node.clock, writer._encodeMap, null)
-
-  checkpoint._lengths = [checkpoint.length].concat(node.clock)
-  --checkpoint._lengths[node.feed + 1]
-
-  // TODO: submit an issue / PR to hyperdb to allow for retrieving feeds at an arbitrary point in history
-  //       which is needed to interpret historic vector clocks.
-  //       For now we use InflatedEntry to decode them by hand.
-  this.db.feeds[node.feed].get(node.inflate, function (err, inflatebuf) {
-    if (err) return cb(err)
-
-    var inflate = hyperdbmessages.InflatedEntry.decode(inflatebuf)
-    checkpoint._feeds = [inflate.contentFeed]
-    for (var i = 0; i < inflate.feeds.length; ++i) {
-      checkpoint._feeds[i + 1] = inflate.feeds[i].key
-    }
-
-    cb(null, checkpoint)
-  })
 }

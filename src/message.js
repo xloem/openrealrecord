@@ -2,7 +2,7 @@
 import * as $protobuf from "protobufjs/minimal";
 
 // Common aliases
-const $Writer = $protobuf.Writer, $util = $protobuf.util;
+const $Reader = $protobuf.Reader, $Writer = $protobuf.Writer, $util = $protobuf.util;
 
 // Exported root namespace
 const $root = $protobuf.roots["default"] || ($protobuf.roots["default"] = {});
@@ -85,6 +85,52 @@ export const Checkpoint = $root.Checkpoint = (() => {
         return writer;
     };
 
+    /**
+     * Decodes a Checkpoint message from the specified reader or buffer.
+     * @function decode
+     * @memberof Checkpoint
+     * @static
+     * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+     * @param {number} [length] Message length if known beforehand
+     * @returns {Checkpoint} Checkpoint
+     * @throws {Error} If the payload is not a reader or valid buffer
+     * @throws {$protobuf.util.ProtocolError} If required fields are missing
+     */
+    Checkpoint.decode = function decode(reader, length) {
+        if (!(reader instanceof $Reader))
+            reader = $Reader.create(reader);
+        let end = length === undefined ? reader.len : reader.pos + length, message = new $root.Checkpoint();
+        while (reader.pos < end) {
+            let tag = reader.uint32();
+            switch (tag >>> 3) {
+            case 0:
+                message.rootsHash = reader.bytes();
+                break;
+            case 1:
+                message.timestamp = reader.uint64();
+                break;
+            case 2:
+                message.length = reader.uint64();
+                break;
+            case 3:
+                message.byteLength = reader.uint64();
+                break;
+            default:
+                reader.skipType(tag & 7);
+                break;
+            }
+        }
+        if (!message.hasOwnProperty("rootsHash"))
+            throw $util.ProtocolError("missing required 'rootsHash'", { instance: message });
+        if (!message.hasOwnProperty("timestamp"))
+            throw $util.ProtocolError("missing required 'timestamp'", { instance: message });
+        if (!message.hasOwnProperty("length"))
+            throw $util.ProtocolError("missing required 'length'", { instance: message });
+        if (!message.hasOwnProperty("byteLength"))
+            throw $util.ProtocolError("missing required 'byteLength'", { instance: message });
+        return message;
+    };
+
     return Checkpoint;
 })();
 
@@ -137,6 +183,37 @@ export const Timestamp = $root.Timestamp = (() => {
             for (let i = 0; i < message.id.length; ++i)
                 writer.uint32(/* id 0, wireType 2 =*/2).bytes(message.id[i]);
         return writer;
+    };
+
+    /**
+     * Decodes a Timestamp message from the specified reader or buffer.
+     * @function decode
+     * @memberof Timestamp
+     * @static
+     * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+     * @param {number} [length] Message length if known beforehand
+     * @returns {Timestamp} Timestamp
+     * @throws {Error} If the payload is not a reader or valid buffer
+     * @throws {$protobuf.util.ProtocolError} If required fields are missing
+     */
+    Timestamp.decode = function decode(reader, length) {
+        if (!(reader instanceof $Reader))
+            reader = $Reader.create(reader);
+        let end = length === undefined ? reader.len : reader.pos + length, message = new $root.Timestamp();
+        while (reader.pos < end) {
+            let tag = reader.uint32();
+            switch (tag >>> 3) {
+            case 0:
+                if (!(message.id && message.id.length))
+                    message.id = [];
+                message.id.push(reader.bytes());
+                break;
+            default:
+                reader.skipType(tag & 7);
+                break;
+            }
+        }
+        return message;
     };
 
     return Timestamp;
@@ -224,6 +301,62 @@ export const Database = $root.Database = (() => {
         writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.rootsHash);
         writer.uint32(/* id 3, wireType 0 =*/24).uint64(message.inflate);
         return writer;
+    };
+
+    /**
+     * Decodes a Database message from the specified reader or buffer.
+     * @function decode
+     * @memberof Database
+     * @static
+     * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+     * @param {number} [length] Message length if known beforehand
+     * @returns {Database} Database
+     * @throws {Error} If the payload is not a reader or valid buffer
+     * @throws {$protobuf.util.ProtocolError} If required fields are missing
+     */
+    Database.decode = function decode(reader, length) {
+        if (!(reader instanceof $Reader))
+            reader = $Reader.create(reader);
+        let end = length === undefined ? reader.len : reader.pos + length, message = new $root.Database();
+        while (reader.pos < end) {
+            let tag = reader.uint32();
+            switch (tag >>> 3) {
+            case 0:
+                if (!(message.metaclock && message.metaclock.length))
+                    message.metaclock = [];
+                if ((tag & 7) === 2) {
+                    let end2 = reader.uint32() + reader.pos;
+                    while (reader.pos < end2)
+                        message.metaclock.push(reader.uint64());
+                } else
+                    message.metaclock.push(reader.uint64());
+                break;
+            case 1:
+                if (!(message.contentclock && message.contentclock.length))
+                    message.contentclock = [];
+                if ((tag & 7) === 2) {
+                    let end2 = reader.uint32() + reader.pos;
+                    while (reader.pos < end2)
+                        message.contentclock.push(reader.uint64());
+                } else
+                    message.contentclock.push(reader.uint64());
+                break;
+            case 2:
+                message.rootsHash = reader.bytes();
+                break;
+            case 3:
+                message.inflate = reader.uint64();
+                break;
+            default:
+                reader.skipType(tag & 7);
+                break;
+            }
+        }
+        if (!message.hasOwnProperty("rootsHash"))
+            throw $util.ProtocolError("missing required 'rootsHash'", { instance: message });
+        if (!message.hasOwnProperty("inflate"))
+            throw $util.ProtocolError("missing required 'inflate'", { instance: message });
+        return message;
     };
 
     return Database;
@@ -337,6 +470,72 @@ export const InflatedDatabase = $root.InflatedDatabase = (() => {
             for (let i = 0; i < message.contentfeeds.length; ++i)
                 writer.uint32(/* id 5, wireType 2 =*/42).bytes(message.contentfeeds[i]);
         return writer;
+    };
+
+    /**
+     * Decodes an InflatedDatabase message from the specified reader or buffer.
+     * @function decode
+     * @memberof InflatedDatabase
+     * @static
+     * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+     * @param {number} [length] Message length if known beforehand
+     * @returns {InflatedDatabase} InflatedDatabase
+     * @throws {Error} If the payload is not a reader or valid buffer
+     * @throws {$protobuf.util.ProtocolError} If required fields are missing
+     */
+    InflatedDatabase.decode = function decode(reader, length) {
+        if (!(reader instanceof $Reader))
+            reader = $Reader.create(reader);
+        let end = length === undefined ? reader.len : reader.pos + length, message = new $root.InflatedDatabase();
+        while (reader.pos < end) {
+            let tag = reader.uint32();
+            switch (tag >>> 3) {
+            case 0:
+                if (!(message.metaclock && message.metaclock.length))
+                    message.metaclock = [];
+                if ((tag & 7) === 2) {
+                    let end2 = reader.uint32() + reader.pos;
+                    while (reader.pos < end2)
+                        message.metaclock.push(reader.uint64());
+                } else
+                    message.metaclock.push(reader.uint64());
+                break;
+            case 1:
+                if (!(message.contentclock && message.contentclock.length))
+                    message.contentclock = [];
+                if ((tag & 7) === 2) {
+                    let end2 = reader.uint32() + reader.pos;
+                    while (reader.pos < end2)
+                        message.contentclock.push(reader.uint64());
+                } else
+                    message.contentclock.push(reader.uint64());
+                break;
+            case 2:
+                message.rootsHash = reader.bytes();
+                break;
+            case 3:
+                message.inflate = reader.uint64();
+                break;
+            case 4:
+                if (!(message.metafeeds && message.metafeeds.length))
+                    message.metafeeds = [];
+                message.metafeeds.push(reader.bytes());
+                break;
+            case 5:
+                if (!(message.contentfeeds && message.contentfeeds.length))
+                    message.contentfeeds = [];
+                message.contentfeeds.push(reader.bytes());
+                break;
+            default:
+                reader.skipType(tag & 7);
+                break;
+            }
+        }
+        if (!message.hasOwnProperty("rootsHash"))
+            throw $util.ProtocolError("missing required 'rootsHash'", { instance: message });
+        if (!message.hasOwnProperty("inflate"))
+            throw $util.ProtocolError("missing required 'inflate'", { instance: message });
+        return message;
     };
 
     return InflatedDatabase;
