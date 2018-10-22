@@ -1,5 +1,3 @@
-'use strict';
-
 import * as bufferAlloc from 'buffer-alloc-unsafe';
 import * as HyperDB from 'hyperdb';
 import * as sodium from 'sodium-universal';
@@ -33,7 +31,7 @@ const keyToFeeds: Function = (db: HyperDB, key: any, cb: Function): void => {
   });
 };
 
-const feedToStreamID: Function = (feed: HyperDB.Feed): string => keyToID(feed.key);
+const feedToStreamID: (feed: HyperDB.Feed) => string = (feed: HyperDB.Feed): string => keyToID(feed.key);
 
 const streamIDToFeedKey: Function = (id: string): Buffer => Buffer.from(id.split('_').join('/'), 'base64');
 
@@ -41,10 +39,17 @@ const hashRoots: Function = (feeds: HyperDB.Feed[], lengths: number, cb: Functio
   const digest: any = bufferAlloc(32);
   const hasher: any = sodium.crypto_generichash_instance(digest.length);
 
-  const totals: any[] = [];
+  const totals: number[] = [];
   let index: number = 0;
 
-  const nextFeed: Function = (err: (Error | null), roots: HyperDB.Root[]): void => {
+  const thisFeed: Function = (): void => {
+    if (!lengths[index]) { return nextFeed(null, []); }
+    feeds[index].rootHashes(lengths[index] - 1, nextFeed);
+  };
+
+  thisFeed();
+
+  function nextFeed(err: (Error | null), roots: HyperDB.Root[]): void {
     if (err) { return cb(err); }
 
     totals[index] = roots.reduce(
@@ -54,17 +59,15 @@ const hashRoots: Function = (feeds: HyperDB.Feed[], lengths: number, cb: Functio
         return acc + root.size;
       },
       0);
-  };
 
-  for (let i: number = 0; i < feeds.length; i++) {
-    index = i;
-    if (!lengths[index]) { return nextFeed(null, []); }
-    feeds[index].rootHashes(lengths[index] - 1, nextFeed);
-    i++;
+    ++index;
+    if (index < feeds.length) {
+      thisFeed();
+    } else {
+      hasher.final(digest);
+      cb(null, digest, totals);
+    }
   }
-
-  hasher.final(digest);
-  cb(null, digest, totals);
 };
 
 export {

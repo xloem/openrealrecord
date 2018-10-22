@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "lib": [
+      "esnext"
+    ],
+    "module": "commonjs",
+    "outDir": "./lib",
+    "noImplicitAny": false,
+    "sourceMap": true,
+    "strictNullChecks": true,
+    "strict": true,
+    "allowSyntheticDefaultImports": true,
+    "target": "es5",
+    "moduleResolution": "node",
+    "typeRoots": [
+      "./node_modules/@types",
+      "./type"
+    ],
+  },
+  "exclude": [
+    "node_modules"
+  ]
+}

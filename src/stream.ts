@@ -3,7 +3,7 @@ import { EventEmitter } from 'events';
 import * as HyperDB from 'hyperdb';
 import * as hyperdbmessages from 'hyperdb/lib/messages';
 import * as hyperdbput from 'hyperdb/lib/put';
-import * as messages from './message';
+import {Checkpoint} from './messages';
 import { feedToStreamID, hashRoots, keyToFeeds, streamIDToFeedKey } from './util';
 
 export default class Stream extends EventEmitter {
@@ -97,7 +97,7 @@ export default class Stream extends EventEmitter {
 
     const seqs: any[] = [];
 
-    const emit: Function = (err: (Error | null), checkpoint?: HyperDB.Checkpoint): boolean | undefined => {
+    const emit: Function = (err: (Error | null), checkpoint?: any): boolean | undefined => {
       if (err) { return this.emit('error', err); }
       this.emit('checkpoint', checkpoint);
     };
@@ -109,11 +109,11 @@ export default class Stream extends EventEmitter {
 
     this.db.get(`${this.path}/checkpoint.protobuf`, initialize);
 
-    const onCheckPoint: Function = (err: (Error | null), checkpoints: HyperDB.Checkpoint[]): boolean | undefined => {
+    const onCheckPoint: Function = (err: (Error | null), checkpoints: any[]): boolean | undefined => {
       if (err) { return emit(err); }
       if (checkpoints.length === 0) { emit(null, null); }
 
-      checkpoints.forEach((cp: HyperDB.Checkpoint) => {
+      checkpoints.forEach((cp: any) => {
         const feed: number = cp.feed;
         const last: any = seqs[feed];
         const cur: any = cp.seq;
@@ -275,14 +275,14 @@ export default class Stream extends EventEmitter {
       if (err) { return cb(err); }
       startIndex = index;
       startOffset = offset;
-      if (tailIndex < 0) { seekDone(); }
+      if (tailIndex >= 0) { seekDone(); }
     };
     this.feed!.seek(start, {}, seekStart);
 
     const seekTail: Function = (err: Error, index: number, offset: number): void => {
       if (err) { return cb(err); }
       tailIndex = index;
-      if (startIndex < 0) { seekDone(); }
+      if (startIndex >= 0) { seekDone(); }
     };
     this.feed!.seek(start + length - 1, {}, seekTail);
   }
@@ -305,7 +305,7 @@ export default class Stream extends EventEmitter {
         const hdbid: number = this.db._byKey.get(this._dbfeed.key.toString('hex'))!._id;
         if (!clock[hdbid]) { clock[hdbid] = this._dbfeed.length; }
 
-        const checkpoint: { rootsHash: null; timestamp: number; length: number; byteLength: number } = {
+        const checkpoint: Checkpoint = {
           rootsHash: null,
           timestamp: Date.now(),
           length: this.feed!.length,
@@ -316,16 +316,16 @@ export default class Stream extends EventEmitter {
           if (error) { return process.nextTick(cb, error); }
 
           checkpoint.rootsHash = contentHash;
-          hyperdbput(this.db, clock, heads, `${this.path}/checkpoint.protobuf`, messages.Checkpoint.encode(checkpoint), unlock);
+          hyperdbput(this.db, clock, heads, `${this.path}/checkpoint.protobuf`, Checkpoint.encode(checkpoint), unlock);
         });
       });
     });
   }
 
   public _decodeCheckpoint = (node: any, cb: Function): void => {
-    let checkpoint: any;
+    let checkpoint: Checkpoint;
     try {
-      checkpoint = messages.Checkpoint.decode(node.value);
+      checkpoint = Checkpoint.decode(node.value);
     } catch (e) {
       return cb(e);
     }

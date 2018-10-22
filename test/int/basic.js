@@ -2,7 +2,7 @@ const test = require('ava')
 const hyperstream = require('../..')
 const ram = require('random-access-memory')
 
-const hs = hyperstream(ram)
+const hs = new hyperstream(ram)
 
 test.serial.cb('ready', t => {
   hs.ready(err => {

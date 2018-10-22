@@ -4,10 +4,9 @@ import * as thunky from 'thunky';
 import Stream from './stream';
 import { feedToStreamID } from './util';
 
-export default class HyperStream extends EventEmitter {
+class HyperStream extends EventEmitter {
   public db: HyperDB;
-  public localStream?: Stream;
-  // tslint:disable-next-line:variable-name
+  public localStream: Stream | null;
   public _streamCache: {[name: string]: Stream};
   public ready: Function;
   public id: string;
@@ -25,6 +24,7 @@ export default class HyperStream extends EventEmitter {
 
     const options: HyperDB.Options = {contentFeed: true, ...opts};
     this.db = new HyperDB(storage, key, options);
+    this.localStream = null;
     this.ready = thunky(this._ready);
 
     this._streamCache = {};
@@ -39,8 +39,9 @@ export default class HyperStream extends EventEmitter {
     if (!stream) {
       stream = new Stream(this.db, id, cb);
       this._streamCache[id] = stream;
+    } else if (cb) {
+      process.nextTick(cb, null, stream);
     }
-    process.nextTick(cb, null, stream);
 
     return stream;
   }
@@ -58,7 +59,6 @@ export default class HyperStream extends EventEmitter {
     return this.localStream.createWriteStream();
   }
 
-  // tslint:disable-next-line:variable-name
   public _ready = (cb: Function): any => {
     this.db.ready((err?: Error) => {
       if (err) { return cb(err); }
@@ -68,3 +68,5 @@ export default class HyperStream extends EventEmitter {
     });
   }
 }
+
+export = HyperStream;

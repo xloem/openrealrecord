@@ -15,7 +15,6 @@
     "hyperdb": "^3.0.0-3",
     "hyperdiscovery": "^7.1.0",
     "minimist": "^1.2.0",
-    "protobufjs": "^6.8.8",
     "protocol-buffers-encodings": "^1.1.0",
     "random-access-memory": "^3.0.0",
     "sodium-universal": "^2.0.0",
@@ -37,6 +36,7 @@
     "typescript-eslint-parser": "^20.0.0"
   },
   "scripts": {
+    "build": "tsc && npm run protobuf",
     "lint": "standard",
     "test-hoc": "cross-env NODE_PATH=lib:test ava",
     "test-unit": "cross-env NODE_PATH=lib:test ava test/unit",
