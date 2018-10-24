@@ -136,7 +136,7 @@ export default class Stream extends EventEmitter {
     this._checkpointwatcher = null;
   }
 
-  public checkpoints = (opts: HyperDB.Options): any => {
+  public checkpoints = (opts?: HyperDB.Options): any => {
     const it: any = this.db.history(opts);
     const _next: any = it._next;
     const next: Function = (cb: Function): void => {

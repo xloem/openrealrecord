@@ -13,7 +13,7 @@ declare module 'hyperdb' {
     public get(key: string, opts?: any, cb?: Function): void;
     public heads(cb: (error: Error, heads: any) => void): void;
     public heads(cb: any): any;
-    public history(opts: HyperDB.Options): any;
+    public history(opts?: HyperDB.Options): any;
     public put(key: string, value: string, cb?: HyperDB.dbCallBack): void;
     public ready(cb: (err?: Error) => void): void;
     public watch(key: string, onchange: Function): void;
