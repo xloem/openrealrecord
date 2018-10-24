@@ -1,0 +1,29 @@
+{
+  "extends": [
+    "tslint:recommended",
+    "tslint-microsoft-contrib"
+  ],
+  "linterOptions": {
+    "exclude": ["*.js"]
+  },
+  "rules": {
+    "completed-docs": false,
+    "export-name": false,
+    "import-name": false,
+    "interface-name": false,
+    "missing-jsdoc": false,
+    "no-any": false,
+    "no-default-export": false,
+    "no-increment-decrement": false,
+    "no-non-null-assertion": false,
+    "no-parameter-reassignment": false,
+    "no-relative-imports": false,
+    "no-submodule-imports": false,
+    "no-suspicious-comment": false,
+    "no-unsafe-any": false,
+    "no-void-expression": false,
+    "strict-boolean-expressions": false,
+    "variable-name": false,
+    "no-implicit-dependencies": [true, "dev"]
+  }
+}
