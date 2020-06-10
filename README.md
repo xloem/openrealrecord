@@ -24,4 +24,6 @@ Known vulnerabilities:
 
 - The hypercore design uses only one hashing algorithm, which may leave it unneccessarily exposed to vulnerabilities discovered in that specific algorithm.
 
+- The software is written in javascript.  Nowadays hypercore has a c++ port, that could be used or forked.
+
 - The code and design has not been reviewed by an expert in security or cryptography.
