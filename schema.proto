@@ -6,6 +6,12 @@ message Checkpoint
   required uint64 byteLength = 3;
 }
 
+message BitcoinCheckpointPublication
+{
+    required bytes hash = 0;
+    required bytes txid = 1;
+}
+
 message Timestamp
 {
   repeated bytes id = 0;

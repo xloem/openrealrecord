@@ -8,8 +8,8 @@
     "node": ">=7.6.0"
   },
   "dependencies": {
-    "bclient": "0.0.2",
-    "bcoin": "^1.0.0-beta.15",
+    "bclient": "^0.1.3",
+    "bcoin": "^1.0.2",
     "callback-timeout": "^3.0.1",
     "hypercore": "^6.14.0",
     "hyperdb": "^3.0.0-3",
@@ -33,7 +33,8 @@
     "test-hoc": "cross-env NODE_PATH=lib:test ava",
     "test-unit": "cross-env NODE_PATH=lib:test ava test/unit",
     "test-int": "cross-env NODE_PATH=lib:test ava test/int",
-    "test-full": "npm-run-all test-int",
+    "test-mul": "cross-env NODE_PATH=lib:test ava test/mul",
+    "test-full": "npm-run-all test-unit test-int test-mul",
     "test": "npm-run-all lint test-full",
     "protobuf": "protocol-buffers schema.proto -o lib/messages.js"
   },
