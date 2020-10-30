@@ -22,4 +22,8 @@ Known vulnerabilities:
 
 - If a device or its private key is compromised, its entries in the record may not match what really happened after the point of compromise.  Advise to record avenues of attack, and to use a second device to continuously verify recordings of first in some way to mitigate this. (TODO: automate some approach to this redundant verification once there are stream modules that are specific enough for this to be appropriate)
 
+- The hypercore design uses only one hashing algorithm, which may leave it unneccessarily exposed to vulnerabilities discovered in that specific algorithm.
+
+- The software is written in javascript.  Nowadays hypercore has a c++ port, that could be used or forked.
+
 - The code and design has not been reviewed by an expert in security or cryptography.
