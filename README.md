@@ -2,7 +2,7 @@
 This repo has been unmaintained for a bit.
 
 Here are the next steps to provide this resource:
-- [ ] 1. port forward the current code, so it runs.  [it takes a little review of the source code to see how to use it]
+- [ ] 1. port forward the current code, so it runs.  [it takes a little review of the source code to see how to use it.  it needs manual testing; the testsuite is empty.]
 - [ ] 2. backport bookmoons's blockchain pinning work, to the old codebase.  [only forward port instead if you develop sufficient understanding of that as easier before starting work, and can work in a way that others can build off of rather than isolating.]
 
 Auto-merging of PRs has been enabled.  The owner of a PR must enable it for their specific PR, for the automatic merge to go through.
