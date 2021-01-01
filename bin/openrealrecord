@@ -1,11 +1,16 @@
 #!/usr/bin/env node
 
-var hyperstream = require('..')
+var openrealrecord = require('..')
 var minimist = require('minimist')
 var low = require('last-one-wins')
+var path = require('path')
 var util = require('../lib/util')
+var sparsestorage = require('../lib/sparse-storage')
 
 var opts = minimist(process.argv.slice(2))
+
+// TODO: reading from stdin should be modular like timestamping
+//       reading from stdout could be too
 
 if (opts.help || process.argv.length === 2) {
   console.log('\nDecentralized secure binary streaming, powered by hyperdb\n')
@@ -16,27 +21,41 @@ if (opts.help || process.argv.length === 2) {
   console.log('  --info                    output database info (default when not piping out)')
   console.log('  --sync                    sync with a network peer before doing anything else')
   console.log('  --serve                   connect to the network and communicate until terminated')
-  console.log('  --authorize [key]         publicize a user\'s stream')
-  console.log('  --pipe [key]              publicize from stdin and/or write stream to stdout')
+  console.log('  --authorize [key]         publish a user\'s stream')
+  console.log('  --pipe [key]              publish from stdin and/or write to stdout if key given')
+  console.log('  --incache minMB:maxMB     delete cached data down to minMB when exceeds maxMB')
   console.log('  --start offset            rewind stream to offset before output')
-  console.log('  --myname name             set stream name')
-  console.log('  --myowner key             set stream owner')
+  console.log('  --my-name name            set stream name')
+  console.log('  --my-owner key            set stream owner')
+  console.log('')
+  console.log('  --my-messages "timestamp" produce timestamps with this stream')
+  console.log('  --timestamp "bcoin-tip"   store blockchain tip hashes from bcoin')
+  console.log('  --bcoin-port port         port of bcoin instance')
+  console.log('  --bcoin-host host         address of bcoin instance')
   console.log('')
 
   process.exit(0)
 }
 
-var storage = opts.storage || require('random-access-memory')
+var storage
+if (opts.storage) {
+	storage = function (name) {
+		return sparsestorage(path.join(opts.storage, name))
+	}
+} else {
+	storage = require('random-access-memory')
+}
 var key = opts.db && Buffer.from(opts.db, 'base64')
 
-var hs = hyperstream(storage, key)
-hs.ready(ready)
+var orr = openrealrecord(storage, key, {tracedebug: opts.tracedebug})
+
+orr.db.ready(orrDbReady)
 
 var sw = null
 var outstream = null
 
-function ready() {
-
+function orrDbReady() {
+  
   if (!opts.pipe || opts.pipe === true) {
     if (!opts.quiet)
       opts.info = true
@@ -47,18 +66,39 @@ function ready() {
   if (opts.info && !opts.storage) {
     console.log('Generated an in-memory database.')
   }
-
+  
   if (opts.sync || opts.serve) {
-    sw = require('hyperdiscovery')(hs.db)
+    sw = require('hyperdiscovery')(orr.db, {port:3283})
+    if (opts.info) {
+      console.log('Connecting to hyperdiscovery network.')
+    }
+    sw.once('error', function(err) {
+      // TODO: this quick hack should be replaced with perhaps proper IPC
+      // it makes assumptions about the undocumented even ordering inside swarm-discovery
+      // and it assumes that if somebody is listening on our port, it is another copy of us
+      if (err.syscall === 'listen' && err.code === 'EADDRINUSE') {
+        console.log('Port ' + err.port + ' already in use; attempting to connect to it.')
+        sw.once('listening', function() {
+          sw.addPeer(orr.db.discoveryKey, err)
+        })
+      } else {
+        throw(err)
+      }
+    })
   }
 
+  orr.ready(orrReady)
+}
+
+function orrReady() {
+
   if (opts.info) {
-    console.log('Database: ' + util.keyToID(hs.db.key))
-    console.log('User: ' + util.keyToID(hs.db.local.key))
+    console.log('Database: ' + util.keyToID(orr.db.key))
+    console.log('User: ' + util.keyToID(orr.db.local.key))
 
     if (opts.verbose) {
-      hs.db.on('remote-update', function(feed, id) { console.log('DB: remote-update ' + feed.key.toString('base64') + ' #' + id) })
-      hs.db.on('append', function(feed, id) { console.log('DB: append ' + feed.key.toString('base64') + ' #' + id) })
+      orr.db.on('remote-update', function(feed, id) { console.log('DB: remote-update ' + feed.key.toString('base64') + ' #' + id) })
+      orr.db.on('append', function(feed, id) { console.log('DB: append ' + feed.key.toString('base64') + ' #' + id) })
     }
 
     if (sw) {
@@ -75,29 +115,29 @@ function ready() {
   }
 
   if (opts.sync) {
-    hs.db.once('remote-update', setmetadata)
+    orr.db.once('remote-update', setmetadata)
   } else {
     setmetadata()
   }
 }
 
 function setmetadata () {
-  if (!opts.myname && !opts.myowner) return streamsOut()
 
-  var metadata = hs.localStream.metadata
-  if (opts.myname) metadata.name = opts.myname
-  if (opts.myowner) metadata.owner = opts.myowner
+  var metadata = orr.localStream.generateMetadata({}, opts)
+  if (!Object.keys(metadata).length) return streamsOut()
 
-  hs.localStream.setMetadata(metadata, function (err, metadata) {
+  var metadata = orr.localStream.generateMetadata({...orr.localStream.metadata}, opts)
+
+  orr.localStream.setMetadata(metadata, function (err, metadata) {
     if (err) console.error(err)
-    streamsOut ()
+    streamsOut()
   })
 }
 
 function streamsOut () {
   if (!opts.info) return main()
 
-  var streams = hs.getStreams()
+  var streams = orr.getStreams()
   console.log(streams.length + ' Streams:')
 
   var idx = 0
@@ -113,10 +153,12 @@ function streamsOut () {
   streamOut()
  
   function streamOut() {
-    hs.getStream(streams[idx], gotStream)
+    if (opts.tracedebug) console.log('streamOut')
+    orr.getStream(streams[idx], gotStream)
   }
 
   function gotStream (err, s) {
+    if (opts.tracedebug) console.log('gotStream', err)
     stream = s
     if (err) {
       streamErr = err
@@ -131,6 +173,7 @@ function streamsOut () {
   }
 
   function validatedMetadata (err) {
+    if (opts.tracedebug) console.log('validatedMetadata', err)
     if (err) streamErr = err
 
     startingBadCheckpoints = 0
@@ -140,8 +183,12 @@ function streamsOut () {
 
     stream.findValidCheckpoint(null, firstGoodCheckpoint, startingBadCheckpoint)
 
-    function startingBadCheckpoint () { ++startingBadCheckpoints }
+    function startingBadCheckpoint () {
+      if (opts.tracedebug) console.log('startingBadCheckpoint')
+      ++startingBadCheckpoints
+    }
     function firstGoodCheckpoint (err, checkpoint) {
+      if (opts.tracedebug) console.log('firstGoodCheckpoint', err)
       if (err) {
         streamErr = err
       }
@@ -152,8 +199,12 @@ function streamsOut () {
         stream.findValidCheckpoint({'reverse': true}, lastGoodCheckpoint, endingBadCheckpoint)
       }
     }
-    function endingBadCheckpoint () { ++endingBadCheckpoints }
+    function endingBadCheckpoint () {
+      if (opts.tracedebug) console.log('endingBadCheckpoint')
+      ++endingBadCheckpoints
+    }
     function lastGoodCheckpoint (err, checkpoint) {
+      if (opts.tracedebug) console.log('lastGoodCheckpoint', err)
       if (err) streamErr = err
       else if (checkpoint) numValidatedEnd = checkpoint.byteLength
       summarize()
@@ -170,7 +221,7 @@ function streamsOut () {
     str += ' ' + numValidatedEnd + 'B'
     if (streamLen > numValidatedEnd) {
       var remaining = streamLen - numValidatedEnd
-      str += ' (+' + remaining + 'B unverified)'
+      str += ' (+' + remaining + 'B unhashed)'
     }
     console.log(str)
     nextloop()
@@ -189,18 +240,29 @@ function main (err) {
     if (opts.authorize) {
       var authorizee = opts.authorize
       opts.authorize = null
-      return hs.db.authorize(Buffer.from(authorizee, 'base64'), main)
+      return orr.db.authorize(Buffer.from(authorizee, 'base64'), main)
     }
     if (opts.pipe) {
-      var writeStream = hs.createWriteStream()
+      var writeStream = orr.createWriteStream()
       writeStream.on('error', console.error)
       process.stdin.pipe(writeStream)
       process.stdin.on('end', finish)
+      if (opts.incache) {
+        incachemarkbytes = 0
+        incachemarkblocks = 0
+	var incache = opts.incache.split(':')
+        incacheminsize = incache[0] * 1024 * 1024
+	incachemaxsize = incache[1] * 1024 * 1024
+        orr.localStream.feed.on('append', onappendshrinkincache)
+      }
       if (opts.pipe !== true) {
         pipeout(opts.pipe, finish)
       }
     }
-    if (sw && !opts.serve && !opts.pipe) {
+    if (opts.serve || opts.start) {
+      orr.localStream.start(()=>{}, finish)
+    }
+    if (sw && !opts.serve && !opts.pipe && !opts.start) {
       finish()
     }
   } catch(e) {
@@ -208,8 +270,45 @@ function main (err) {
   }
 }
 
+// only store the last cache bytes if enabled
+var incachemarkbytes
+var incachemarkblocks
+var incachesize
+function onappendshrinkincache() {
+  var feed = orr.localStream.feed
+  var len = feed.byteLength
+  if (len - incachemarkbytes >= incachemaxsize) {
+    feed.removeListener('append', onappendshrinkincache)
+    var destbytes = len - incacheminsize
+    var destblocks
+    feed.seek(destbytes, function (err, index, offset) {
+      if (err) return console.log('Seeking to clear cache ERROR: ' + err)
+      if (index >= feed.length - 1) {
+        destblocks = feed.length - 1
+        destbytes -= offset
+        shrink()
+      } else {
+        destblocks = index
+        feed.get(destblocks, { wait: false, valueEncoding: 'binary' }, function (err, data) {
+          if (!err) destbytes += data.length - offset
+          shrink()
+        })
+      }
+    })
+  }
+
+  function shrink() {
+    feed.clear(incachemarkblocks, destblocks, shrank)
+  }
+  function shrank() {
+    incachemarkblocks = destblocks
+    incachemarkbytes = destbytes
+    feed.on('append', onappendshrinkincache)
+  }
+}
+
 function pipeout (key, cb) {
-  outstream = hs.getStream(key, function (err) {
+  outstream = orr.getStream(key, function (err) {
     if (err) return finish(err)
     var end = 0
     var nextend = null
@@ -221,12 +320,19 @@ function pipeout (key, cb) {
       startStreaming()
     }, console.error)
 
+    const BLOCKSIZE = 1024 * 1024
     var writeout = low(function(length, cb2) {
+      var remaining = 0
+      if (length > BLOCKSIZE) {
+        remaining = length - BLOCKSIZE
+        length = BLOCKSIZE
+      }
       outstream.read(start, length, {}, function (err, data) {
         if (err) return cb(err)
         process.stdout.write(data)
         start += data.length
         cb2()
+        if (remaining) writeout(remaining)
       })
     })
 
@@ -270,3 +376,7 @@ function finish (err) {
   if (outstream && outstream.listening()) outstream.ignore()
   if (sw) sw.close()
 }
+
+
+
+

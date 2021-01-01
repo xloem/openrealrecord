@@ -1,20 +1,23 @@
 {
-  "name": "hyperstream",
+  "name": "openrealrecord",
   "version": "0.0.1",
   "description": "Decentralized secure binary streaming powered by hyperdb",
   "main": "./lib/index.js",
-  "bin": "./bin/hyperstream",
+  "bin": "./bin/openrealrecord",
   "engines": {
     "node": ">=7.6.0"
   },
   "dependencies": {
-    "bclient": "0.0.2",
+    "bclient": "^0.1.3",
+    "bcoin": "^1.0.2",
+    "callback-timeout": "^3.0.1",
     "hypercore": "^6.14.0",
     "hyperdb": "^3.0.0-3",
     "hyperdiscovery": "^7.1.0",
     "minimist": "^1.2.3",
     "protocol-buffers-encodings": "^1.1.0",
-    "random-access-memory": "^3.0.0"
+    "random-access-memory": "^3.0.0",
+    "sodium-native": "^2.1.3"
   },
   "devDependencies": {
     "ava": "^1.0.0-beta.8",
@@ -30,12 +33,13 @@
     "test-hoc": "cross-env NODE_PATH=lib:test ava",
     "test-unit": "cross-env NODE_PATH=lib:test ava test/unit",
     "test-int": "cross-env NODE_PATH=lib:test ava test/int",
-    "test-full": "npm-run-all test-int",
+    "test-mul": "cross-env NODE_PATH=lib:test ava test/mul",
+    "test-full": "npm-run-all test-unit test-int test-mul",
     "test": "npm-run-all lint test-full",
     "protobuf": "protocol-buffers schema.proto -o lib/messages.js"
   },
-  "repository": "https://github.com/xloem/hyperstream.git",
-  "homepage": "https://github.com/xloem/hyperstream.git",
+  "repository": "https://github.com/xloem/openrealrecord.git",
+  "homepage": "https://github.com/xloem/openrealrecord.git",
   "author": "Karl Semich <0xloem@gmail.com>",
   "license": "MIT"
 }
